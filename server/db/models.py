@@ -132,6 +132,7 @@ class Conversation(Base):
     __table_args__ = (
         Index("idx_user_workspace", "user_id", "internal_workspace_id"),
         Index("idx_created", "created_timestamp"),
+        {"schema": SCHEMA_NAME if get_db_type() == "postgres" else None}
     )
 
     id = Column(UUID(), primary_key=True, default=uuid_module.uuid4)
@@ -158,10 +159,13 @@ class Message(Base):
     __table_args__ = (
         UniqueConstraint("conversation_id", "message_index", name="message_index_unique"),
         Index("idx_conversation_messages", "conversation_id", "message_index"),
+        {"schema": SCHEMA_NAME if get_db_type() == "postgres" else None}
     )
 
     id = Column(UUID(), primary_key=True, default=uuid_module.uuid4)
-    conversation_id = Column(UUID(), ForeignKey("conversations.id", ondelete="CASCADE"), nullable=False)
+    # Use schema-qualified FK for PostgreSQL
+    fk_target = f"{SCHEMA_NAME}.conversations.id" if get_db_type() == "postgres" else "conversations.id"
+    conversation_id = Column(UUID(), ForeignKey(fk_target, ondelete="CASCADE"), nullable=False)
     role = Column(String(20), nullable=False)  # Store enum as string
     created_timestamp = Column(TIMESTAMP(), server_default=func.now())
     message_index = Column(Integer, nullable=False)
@@ -183,10 +187,13 @@ class Response(Base):
     __table_args__ = (
         Index("idx_conversation_responses", "conversation_id", "created_timestamp"),
         Index("idx_status", "status"),
+        {"schema": SCHEMA_NAME if get_db_type() == "postgres" else None}
     )
 
     id = Column(String(64), primary_key=True)  # resp_abc123
-    conversation_id = Column(UUID(), ForeignKey("conversations.id", ondelete="CASCADE"), nullable=False)
+    # Use schema-qualified FK for PostgreSQL
+    fk_target = f"{SCHEMA_NAME}.conversations.id" if get_db_type() == "postgres" else "conversations.id"
+    conversation_id = Column(UUID(), ForeignKey(fk_target, ondelete="CASCADE"), nullable=False)
     status = Column(String(20), nullable=False, default="in_progress")  # Store enum as string
     background = Column(Boolean, nullable=False, default=False)
     created_timestamp = Column(TIMESTAMP(), server_default=func.now())

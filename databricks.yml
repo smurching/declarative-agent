@@ -43,6 +43,13 @@ targets:
     variables:
       resource_name_suffix: "dev"
 
+  dogfood:
+    mode: development
+    workspace:
+      profile: dogfood
+    variables:
+      resource_name_suffix: "dogfood"
+
   prod:
     mode: production
     variables:
