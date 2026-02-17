@@ -148,6 +148,91 @@ Retrieve or resume a response:
 curl http://localhost:8000/v1/responses/resp_abc123
 ```
 
+## Declarative Agent SDK
+
+Define and run AI agents using simple YAML configurations powered by the OpenResponses API backend.
+
+### Features
+
+- **Define agents via YAML** - No code required to configure agents
+- **Multiple execution modes** - Streaming, non-streaming, and background
+- **Conversation history** - Multi-turn conversations with context
+- **Production-ready** - Built on battle-tested OpenResponses API
+
+### Quick Start
+
+**1. Define an Agent (YAML)**
+
+```yaml
+# examples/agents/assistant.yaml
+name: "helpful-assistant"
+description: "A helpful AI assistant"
+
+model: "databricks-gpt-5-2"
+temperature: 0.7
+
+instructions: |
+  You are a helpful AI assistant. Provide clear and concise answers.
+
+supports_streaming: true
+supports_background: true
+```
+
+**2. Run the Agent (Python)**
+
+```python
+import asyncio
+from sdk.declarative_agent import DeclarativeAgent, AgentRunner
+
+async def main():
+    # Load agent from YAML
+    agent = DeclarativeAgent.from_yaml(
+        "examples/agents/assistant.yaml",
+        backend_url="http://localhost:8000"
+    )
+
+    # Create runner
+    async with AgentRunner(agent, user_id=12345) as runner:
+        # Non-streaming
+        response = await runner.run(
+            message="What is 2+2?",
+            stream=False
+        )
+        print(response['output'][0]['content'])
+
+        # Streaming
+        stream = await runner.run(
+            message="Tell me a story",
+            stream=True
+        )
+        async for event in stream:
+            if event.get("type") == "delta":
+                print(event["delta"]["text"], end="", flush=True)
+
+        # Background mode (for long-running tasks)
+        response = await runner.run(
+            message="Analyze this large dataset...",
+            background=True
+        )
+        task_id = response['id']
+        # Later: await runner.retrieve(task_id)
+
+asyncio.run(main())
+```
+
+### Examples
+
+See the [`examples/`](./examples/) directory for complete examples:
+
+- **basic_usage.py** - Non-streaming, streaming, and background modes
+- **background_agent.py** - Long-running tasks with background execution
+- **agents/** - Example YAML agent definitions
+
+### Documentation
+
+- [SDK Documentation](./sdk/README.md) - Full API reference
+- [Examples Guide](./examples/README.md) - Running examples and creating custom agents
+
 ## Configuration
 
 ### Environment Variables

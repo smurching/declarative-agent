@@ -1,0 +1,20 @@
+name: "helpful-assistant"
+description: "A helpful AI assistant that answers questions"
+
+# Model configuration
+model: "databricks-gpt-5-2"
+temperature: 0.7
+
+# System instructions
+instructions: |
+  You are a helpful AI assistant. You provide clear, concise, and accurate answers.
+  Be friendly and professional in your responses.
+
+# Capabilities
+supports_streaming: true
+supports_background: true
+
+# Metadata
+metadata:
+  version: "1.0"
+  author: "example"

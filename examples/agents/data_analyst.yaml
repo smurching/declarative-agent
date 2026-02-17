@@ -1,0 +1,28 @@
+name: "data-analyst"
+description: "An AI data analyst that performs long-running analysis tasks"
+
+# Model configuration
+model: "databricks-gpt-5-2"
+temperature: 0.3  # Lower temperature for more consistent analysis
+
+# System instructions
+instructions: |
+  You are an expert data analyst. You help users understand data, create visualizations,
+  and derive insights. When given a complex analysis task, break it down into clear steps
+  and provide detailed explanations of your findings.
+
+  For long-running tasks, you can process them in the background and provide status updates.
+
+# Capabilities
+supports_streaming: true
+supports_background: true  # Supports background execution for long analyses
+
+# Metadata
+metadata:
+  version: "1.0"
+  author: "example"
+  use_cases:
+    - "Data exploration"
+    - "Statistical analysis"
+    - "Report generation"
+    - "Long-running computations"
