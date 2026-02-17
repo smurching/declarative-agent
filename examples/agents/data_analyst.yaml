@@ -94,6 +94,22 @@ behavior:
   streaming: true
   interrupt_on_tool_approval: false  # No approvals needed for read-only analysis
 
+  # Background mode - for long-running analysis jobs
+  background: true  # Enable background mode for this agent
+  background_use_cases: |
+    Use background mode (vs streaming) for:
+    - Large dataset queries (>1M rows)
+    - Complex multi-step analysis (>5 tool calls expected)
+    - Report generation with multiple visualizations
+    - Historical trend analysis across years of data
+    - Machine learning model training
+
+    Use streaming mode for:
+    - Quick exploratory queries
+    - Interactive data exploration
+    - Real-time chat with follow-up questions
+    - Simple aggregations and summaries
+
 # Conversation settings
 conversation:
   auto_compact: true
