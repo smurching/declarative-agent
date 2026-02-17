@@ -1,28 +1,153 @@
-name: "data-analyst"
-description: "An AI data analyst that performs long-running analysis tasks"
+# Data Analyst Agent
+# Answers data questions using SQL queries and Python analysis
+
+name: data_analyst
+version: 1.0
+description: "Data analyst agent that helps users explore and analyze data with SQL and Python"
 
 # Model configuration
-model: "databricks-gpt-5-2"
-temperature: 0.3  # Lower temperature for more consistent analysis
+model:
+  provider: databricks
+  name: databricks-claude-sonnet-4-5
+  temperature: 0.7
+  max_output_tokens: 4096
 
-# System instructions
-instructions: |
-  You are an expert data analyst. You help users understand data, create visualizations,
-  and derive insights. When given a complex analysis task, break it down into clear steps
-  and provide detailed explanations of your findings.
+# System prompt
+prompt:
+  system: |
+    You are a data analyst helping users explore and understand their data.
 
-  For long-running tasks, you can process them in the background and provide status updates.
+    Your workflow:
+    1. Understand the user's question
+    2. Query the relevant tables using SQL
+    3. Analyze the results with Python (pandas, matplotlib, seaborn)
+    4. Create visualizations when appropriate
+    5. Explain your findings clearly
 
-# Capabilities
-supports_streaming: true
-supports_background: true  # Supports background execution for long analyses
+    Guidelines:
+    - Start with simple queries, then refine based on results
+    - Always explain your SQL queries and Python code
+    - Use visualizations to make insights clear
+    - Suggest follow-up questions to explore deeper
+    - If data quality issues exist, point them out
 
-# Metadata
-metadata:
-  version: "1.0"
-  author: "example"
-  use_cases:
-    - "Data exploration"
-    - "Statistical analysis"
-    - "Report generation"
-    - "Long-running computations"
+# Tools available to the agent
+tools:
+  # UC Table tools - Various data sources
+  - type: table
+    name: sales_data
+    description: |
+      Sales transaction data.
+      Fields: transaction_id, date, customer_id, product_id, quantity, price, revenue, region
+      Date range: 2020-01-01 to present
+    table_name: main.analytics.sales
+    permission: on_behalf_of_user
+    approval_policy: always_allow
+
+  - type: table
+    name: customer_data
+    description: |
+      Customer profile data.
+      Fields: customer_id, name, industry, company_size, country, acquisition_date, lifetime_value
+    table_name: main.analytics.customers
+    permission: on_behalf_of_user
+    approval_policy: always_allow
+
+  - type: table
+    name: product_data
+    description: |
+      Product catalog.
+      Fields: product_id, name, category, subcategory, unit_cost, list_price, launch_date
+    table_name: main.analytics.products
+    permission: on_behalf_of_user
+    approval_policy: always_allow
+
+  # Code Interpreter tool - Python analysis
+  - type: code_interpreter
+    name: python_analysis
+    description: |
+      Analyze data with Python. Available libraries:
+      - pandas: Data manipulation and analysis
+      - numpy: Numerical computing
+      - matplotlib, seaborn: Data visualization
+      - scikit-learn: Machine learning (basic stats)
+
+      Use this to:
+      - Transform and aggregate query results
+      - Create charts and visualizations
+      - Calculate statistics and correlations
+      - Fit simple predictive models
+    approval_policy: always_allow
+
+  # Vector Search tool - Find similar queries/reports
+  - type: vector_search
+    name: similar_analyses
+    description: "Find similar analysis questions and reports that have been done before"
+    index_name: main.analytics.analysis_history_index
+    permission: on_behalf_of_user
+    approval_policy: always_allow
+
+# Agent behavior
+behavior:
+  recursion_limit: 15  # Data analysis may require many steps
+  parallel_tools: false  # Sequential: query first, then analyze
+  streaming: true
+  interrupt_on_tool_approval: false  # No approvals needed for read-only analysis
+
+# Conversation settings
+conversation:
+  auto_compact: true
+  compact_strategy: summarize  # Keep context of analysis so far
+  memory:
+    short_term: true
+    long_term:
+      enabled: false
+
+# Observability
+tracing:
+  enabled: true
+  destination:
+    type: table
+    name: main.analytics.agent_traces
+  include_tool_inputs: true
+  include_tool_outputs: true
+  include_prompt: true
+  redact_pii: true
+
+feedback:
+  enabled: true
+  destination:
+    type: table
+    name: main.analytics.agent_feedback
+
+# Governance
+governance:
+  # Cost limits (analysis can be expensive with many iterations)
+  max_cost_per_session: 1.00
+  max_cost_per_user_per_day: 10.00
+
+  # Time limits
+  max_duration_seconds: 600  # 10 minutes for complex analysis
+
+  # Rate limits
+  rate_limit:
+    requests_per_minute: 30
+    requests_per_hour: 300
+
+  # Access control
+  allowed_principals:
+    - groups: ["data_team", "analysts", "executives"]
+
+  # Content safety
+  content_safety:
+    enabled: true
+    block_pii_in_traces: true
+    block_toxic_content: false
+
+# UI configuration (for rendering custom charts)
+ui:
+  enable_custom_rendering: true
+  supported_types:
+    - chart  # Line, bar, scatter, etc.
+    - table  # Data tables
+    - map  # Geographic visualizations
