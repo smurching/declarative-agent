@@ -33,50 +33,9 @@ def get_db_type():
     return os.getenv("DB_TYPE", "postgres").lower()
 
 
-def table_args_with_schema(*args):
-    """
-    Create __table_args__ tuple with conditional schema.
-
-    For PostgreSQL: Includes schema in the dict.
-    For SQLite: Omits schema (not supported).
-    """
-    db_type = get_db_type()
-    if db_type == "postgres":
-        return args + ({"schema": SCHEMA_NAME},)
-    else:
-        return args + ({},)
-
-
-def enum_column(enum_class, name, **kwargs):
-    """
-    Create an Enum column that works across databases.
-
-    For PostgreSQL: Uses native ENUM type with schema.
-    For SQLite: Uses String column with validation.
-    """
-    db_type = get_db_type()
-    if db_type == "postgres":
-        return Column(
-            SQLEnum(enum_class, name=name, schema=SCHEMA_NAME, values_callable=lambda x: [e.value for e in x]),
-            **kwargs
-        )
-    else:
-        # SQLite: use String with check constraint
-        return Column(String(50), **kwargs)
-
-
-def fk_reference(table_name, column="id", **kwargs):
-    """
-    Create a ForeignKey reference that works across databases.
-
-    For PostgreSQL: Includes schema prefix.
-    For SQLite: No schema prefix.
-    """
-    db_type = get_db_type()
-    if db_type == "postgres":
-        return ForeignKey(f"{SCHEMA_NAME}.{table_name}.{column}", **kwargs)
-    else:
-        return ForeignKey(f"{table_name}.{column}", **kwargs)
+# Note: Schema is only used for PostgreSQL, SQLite ignores it
+# Table args will need to be set dynamically or use a default that works for both
+DEFAULT_TABLE_ARGS = {}  # Can be overridden at engine creation time
 
 
 class UUID(TypeDecorator):
@@ -170,6 +129,10 @@ class Conversation(Base):
     """
 
     __tablename__ = "conversations"
+    __table_args__ = (
+        Index("idx_user_workspace", "user_id", "internal_workspace_id"),
+        Index("idx_created", "created_timestamp"),
+    )
 
     id = Column(UUID(), primary_key=True, default=uuid_module.uuid4)
     internal_workspace_id = Column(BigInteger, nullable=False)
@@ -183,11 +146,6 @@ class Conversation(Base):
     messages = relationship("Message", back_populates="conversation", cascade="all, delete-orphan")
     responses = relationship("Response", back_populates="conversation", cascade="all, delete-orphan")
 
-    __table_args__ = table_args_with_schema(
-        Index("idx_user_workspace", "user_id", "internal_workspace_id"),
-        Index("idx_created", "created_timestamp"),
-    )
-
 
 class Message(Base):
     """
@@ -197,14 +155,14 @@ class Message(Base):
     """
 
     __tablename__ = "messages"
+    __table_args__ = (
+        UniqueConstraint("conversation_id", "message_index", name="message_index_unique"),
+        Index("idx_conversation_messages", "conversation_id", "message_index"),
+    )
 
     id = Column(UUID(), primary_key=True, default=uuid_module.uuid4)
-    conversation_id = Column(
-        UUID(),
-        fk_reference("conversations", ondelete="CASCADE"),
-        nullable=False,
-    )
-    role = enum_column(MessageRole, 'message_role', nullable=False)
+    conversation_id = Column(UUID(), ForeignKey("conversations.id", ondelete="CASCADE"), nullable=False)
+    role = Column(String(20), nullable=False)  # Store enum as string
     created_timestamp = Column(TIMESTAMP(), server_default=func.now())
     message_index = Column(Integer, nullable=False)
     content = Column(LargeBinary, nullable=False)  # JSON serialized as bytes
@@ -212,11 +170,6 @@ class Message(Base):
 
     # Relationships
     conversation = relationship("Conversation", back_populates="messages")
-
-    __table_args__ = table_args_with_schema(
-        UniqueConstraint("conversation_id", "message_index", name="message_index_unique"),
-        Index("idx_conversation_messages", "conversation_id", "message_index"),
-    )
 
 
 class Response(Base):
@@ -227,14 +180,14 @@ class Response(Base):
     """
 
     __tablename__ = "responses"
+    __table_args__ = (
+        Index("idx_conversation_responses", "conversation_id", "created_timestamp"),
+        Index("idx_status", "status"),
+    )
 
     id = Column(String(64), primary_key=True)  # resp_abc123
-    conversation_id = Column(
-        UUID(),
-        fk_reference("conversations", ondelete="CASCADE"),
-        nullable=False,
-    )
-    status = enum_column(ResponseStatus, 'response_status', nullable=False, default=ResponseStatus.IN_PROGRESS)
+    conversation_id = Column(UUID(), ForeignKey("conversations.id", ondelete="CASCADE"), nullable=False)
+    status = Column(String(20), nullable=False, default="in_progress")  # Store enum as string
     background = Column(Boolean, nullable=False, default=False)
     created_timestamp = Column(TIMESTAMP(), server_default=func.now())
     completed_timestamp = Column(TIMESTAMP(), nullable=True)
@@ -244,8 +197,3 @@ class Response(Base):
 
     # Relationships
     conversation = relationship("Conversation", back_populates="responses")
-
-    __table_args__ = table_args_with_schema(
-        Index("idx_conversation_responses", "conversation_id", "created_timestamp"),
-        Index("idx_status", "status"),
-    )
