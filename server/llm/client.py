@@ -30,7 +30,7 @@ async def generate_response(
     temperature: float = 0.7,
 ):
     """
-    Call Databricks LLM endpoint.
+    Call Databricks LLM endpoint using OpenResponses API.
 
     Args:
         messages: List of message dictionaries with 'role' and 'content'
@@ -39,7 +39,7 @@ async def generate_response(
         temperature: Sampling temperature
 
     Returns:
-        ChatCompletion object or AsyncIterator of chunks
+        Response object or AsyncIterator of response chunks
     """
     client = get_llm_client()
     settings = get_settings()
@@ -49,10 +49,10 @@ async def generate_response(
 
     logger.info(f"Calling LLM with model={model}, stream={stream}, messages={len(messages)}")
 
-    # Use chat.completions for now - responses.create may not be fully supported yet
-    response = await client.chat.completions.create(
+    # Use responses.create - OpenResponses API supported by Databricks model serving
+    response = await client.responses.create(
         model=model,
-        messages=messages,
+        input=messages,  # OpenResponses uses 'input' not 'messages'
         stream=stream,
         temperature=temperature,
     )
@@ -84,8 +84,8 @@ async def stream_llm_response(
     )
 
     async for chunk in response:
-        # Handle chat completions streaming format
-        if hasattr(chunk, 'choices') and len(chunk.choices) > 0:
-            delta = chunk.choices[0].delta
-            if hasattr(delta, 'content') and delta.content:
-                yield delta.content
+        # Handle OpenResponses streaming format
+        if hasattr(chunk, 'type') and chunk.type == 'response.output_text.delta':
+            # Response delta events have text directly
+            if hasattr(chunk, 'delta') and chunk.delta:
+                yield chunk.delta

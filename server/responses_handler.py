@@ -166,7 +166,8 @@ async def _execute_response_background(
         # Generate response (non-streaming)
         llm_messages = _convert_input_messages(input_messages)
         response = await generate_response(llm_messages, stream=False, model=model, temperature=temperature)
-        response_text = response.choices[0].message.content
+        # Extract text from OpenResponses format
+        response_text = response.output[0].content[0].text
 
         # Save assistant message
         async with get_db_context() as session:
@@ -326,7 +327,8 @@ async def handle_responses(request: ResponsesRequest):
             model=request.model,
             temperature=request.temperature,
         )
-        response_text = response.choices[0].message.content
+        # Extract text from OpenResponses format
+        response_text = response.output[0].content[0].text
 
         # Save assistant message
         async with get_db_context() as session:
