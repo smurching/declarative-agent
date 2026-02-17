@@ -53,11 +53,15 @@ async def lifespan(app: FastAPI):
         # Get the engine directly
         engine = _connection_pool._engine
 
-        # For PostgreSQL: Create the custom schema first
+        # For PostgreSQL: Create the custom schema first and configure metadata
         if settings.db_type.lower() == "postgres":
             async with engine.begin() as conn:
                 await conn.execute(text(f"CREATE SCHEMA IF NOT EXISTS {SCHEMA_NAME}"))
                 logger.info(f"Schema '{SCHEMA_NAME}' ready")
+
+            # Set schema on metadata for PostgreSQL
+            Base.metadata.schema = SCHEMA_NAME
+            logger.info(f"Configured metadata to use schema: {SCHEMA_NAME}")
 
         # Create all tables (in custom schema for PostgreSQL, default for SQLite)
         async with engine.begin() as conn:
