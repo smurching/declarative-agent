@@ -30,7 +30,7 @@ async def generate_response(
     temperature: float = 0.7,
 ):
     """
-    Call Databricks LLM endpoint using Responses API.
+    Call Databricks LLM endpoint.
 
     Args:
         messages: List of message dictionaries with 'role' and 'content'
@@ -39,7 +39,7 @@ async def generate_response(
         temperature: Sampling temperature
 
     Returns:
-        Response object or AsyncIterator of chunks (via responses.create)
+        ChatCompletion object or AsyncIterator of chunks
     """
     client = get_llm_client()
     settings = get_settings()
@@ -49,11 +49,10 @@ async def generate_response(
 
     logger.info(f"Calling LLM with model={model}, stream={stream}, messages={len(messages)}")
 
-    # Use responses.create() instead of chat.completions.create()
-    # This aligns with the OpenResponses API pattern
-    response = await client.responses.create(
+    # Use chat.completions for now - responses.create may not be fully supported yet
+    response = await client.chat.completions.create(
         model=model,
-        input=messages,  # responses API uses 'input' instead of 'messages'
+        messages=messages,
         stream=stream,
         temperature=temperature,
     )
@@ -67,7 +66,7 @@ async def stream_llm_response(
     temperature: float = 0.7,
 ) -> AsyncIterator[str]:
     """
-    Stream LLM response chunks using Responses API.
+    Stream LLM response chunks.
 
     Args:
         messages: List of message dictionaries
@@ -84,22 +83,9 @@ async def stream_llm_response(
         temperature=temperature,
     )
 
-    async for event in response:
-        # Handle responses API streaming format
-        # Events have a 'type' field and may contain delta or other content
-        if hasattr(event, 'type'):
-            event_type = event.type
-            # Extract text from delta events
-            if 'delta' in event_type:
-                if hasattr(event, 'delta'):
-                    yield event.delta
-                elif hasattr(event, 'content'):
-                    # Some events may have content field directly
-                    for content_item in event.content:
-                        if hasattr(content_item, 'text'):
-                            yield content_item.text
-        # Fallback: handle chat completions format if responses API not available
-        elif hasattr(event, 'choices') and len(event.choices) > 0:
-            delta = event.choices[0].delta
+    async for chunk in response:
+        # Handle chat completions streaming format
+        if hasattr(chunk, 'choices') and len(chunk.choices) > 0:
+            delta = chunk.choices[0].delta
             if hasattr(delta, 'content') and delta.content:
                 yield delta.content
