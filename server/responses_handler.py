@@ -270,7 +270,11 @@ async def handle_responses(request: ResponsesRequest):
                 request.temperature,
             )
         )
-        return BackgroundResponse(id=response_id, status="in_progress")
+        return BackgroundResponse(
+            id=response_id,
+            status="in_progress",
+            conversation_id=str(conv.id)
+        )
 
     elif request.stream:
         # Stream response
@@ -336,6 +340,7 @@ async def handle_responses(request: ResponsesRequest):
         return ResponsesResponse(
             id=response_id,
             output=[OutputItem(role="assistant", content=response_text)],
+            conversation_id=str(conv.id)
         )
 
 

@@ -53,6 +53,7 @@ class ResponsesResponse(BaseModel):
     id: str
     output: List[OutputItem]
     status: Optional[str] = "completed"
+    conversation_id: Optional[str] = None  # For tracking conversations in tests
 
 
 class BackgroundResponse(BaseModel):
@@ -60,6 +61,7 @@ class BackgroundResponse(BaseModel):
 
     id: str
     status: Literal["in_progress"]
+    conversation_id: Optional[str] = None  # For tracking conversations in tests
 
 
 class StreamEvent(BaseModel):

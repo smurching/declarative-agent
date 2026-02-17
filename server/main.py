@@ -170,9 +170,11 @@ async def get_conversation_endpoint(conversation_id: str):
     messages_data = []
     for msg in messages:
         content = json.loads(msg.content.decode("utf-8"))
+        # Handle role being either string or enum
+        role_str = msg.role if isinstance(msg.role, str) else msg.role.value
         messages_data.append({
             "id": str(msg.id),
-            "role": msg.role.value,
+            "role": role_str,
             "content": content,
             "message_index": msg.message_index,
             "created_timestamp": msg.created_timestamp.isoformat(),
@@ -223,9 +225,11 @@ async def get_messages_endpoint(
     messages_data = []
     for msg in messages:
         content = json.loads(msg.content.decode("utf-8"))
+        # Handle role being either string or enum
+        role_str = msg.role if isinstance(msg.role, str) else msg.role.value
         messages_data.append({
             "id": str(msg.id),
-            "role": msg.role.value,
+            "role": role_str,
             "content": content,
             "message_index": msg.message_index,
             "created_timestamp": msg.created_timestamp.isoformat(),
