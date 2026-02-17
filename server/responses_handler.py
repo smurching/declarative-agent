@@ -44,7 +44,8 @@ def _convert_input_messages(input_messages: list) -> List[Dict[str, str]]:
 async def _stream_openresponses_events(
     response_id: str,
     conversation_id,
-    input_messages: list,
+    input_messages: list,  # Messages for LLM (may include history)
+    new_user_message: dict = None,  # Just the new user message to save
     model: str = None,
     temperature: float = 0.7,
 ):
@@ -52,20 +53,25 @@ async def _stream_openresponses_events(
     Generate SSE stream in OpenResponses format.
 
     Yields SSE events as the LLM generates a response.
+
+    Args:
+        input_messages: All messages to send to LLM (including history if applicable)
+        new_user_message: The new user message to save to DB (None if already saved)
     """
     try:
-        # Save user message first
-        async with get_db_context() as session:
-            message_index = await get_next_message_index(session, conversation_id)
-            user_content = {"text": input_messages[-1].content}
-            await save_message(
-                session,
-                conversation_id,
-                MessageRole.USER,
-                user_content,
-                message_index,
-            )
-            await session.commit()
+        # Save new user message if provided (not already in DB)
+        if new_user_message:
+            async with get_db_context() as session:
+                message_index = await get_next_message_index(session, conversation_id)
+                user_content = {"text": new_user_message.content}
+                await save_message(
+                    session,
+                    conversation_id,
+                    MessageRole.USER,
+                    user_content,
+                    message_index,
+                )
+                await session.commit()
 
         # Convert messages to OpenAI format
         llm_messages = _convert_input_messages(input_messages)
@@ -144,24 +150,26 @@ async def _stream_openresponses_events(
 async def _execute_response_background(
     response_id: str,
     conversation_id,
-    input_messages: list,
+    input_messages: list,  # Messages for LLM (may include history)
+    new_user_message: dict = None,  # Just the new user message to save
     model: str = None,
     temperature: float = 0.7,
 ):
     """Execute response in background mode."""
     try:
-        # Save user message
-        async with get_db_context() as session:
-            message_index = await get_next_message_index(session, conversation_id)
-            user_content = {"text": input_messages[-1].content}
-            await save_message(
-                session,
-                conversation_id,
-                MessageRole.USER,
-                user_content,
-                message_index,
-            )
-            await session.commit()
+        # Save new user message if provided
+        if new_user_message:
+            async with get_db_context() as session:
+                message_index = await get_next_message_index(session, conversation_id)
+                user_content = {"text": new_user_message.content}
+                await save_message(
+                    session,
+                    conversation_id,
+                    MessageRole.USER,
+                    user_content,
+                    message_index,
+                )
+                await session.commit()
 
         # Generate response (non-streaming)
         llm_messages = _convert_input_messages(input_messages)
@@ -285,6 +293,7 @@ async def handle_responses(request: ResponsesRequest):
                 response_id,
                 conv.id,
                 messages_with_history,  # Use history-aware messages for LLM
+                input_messages[-1],  # Only the new user message to save
                 request.model,
                 request.temperature,
             )
@@ -302,6 +311,7 @@ async def handle_responses(request: ResponsesRequest):
                 response_id,
                 conv.id,
                 messages_with_history,  # Use history-aware messages for LLM
+                input_messages[-1],  # Only the new user message to save
                 request.model,
                 request.temperature,
             ),
