@@ -368,11 +368,14 @@ async def get_response(response_id: str, stream: bool = False):
             async def stream_completed():
                 if response_record.final_output:
                     for item in response_record.final_output:
-                        event = {
-                            "type": "response.output_item.delta",
-                            "delta": {"text": item.get("content", "")},
-                        }
-                        yield f"data: {json.dumps(event)}\n\n"
+                        content = item.get("content", "")
+                        # Stream the content character by character or in chunks
+                        for char in content:
+                            event = {
+                                "type": "response.output_text.delta",
+                                "delta": char,
+                            }
+                            yield f"data: {json.dumps(event)}\n\n"
 
                 done_event = {"type": "response.output_item.done"}
                 yield f"data: {json.dumps(done_event)}\n\n"
