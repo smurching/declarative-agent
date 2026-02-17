@@ -214,16 +214,25 @@ async def handle_responses(request: ResponsesRequest):
     """
     settings = get_settings()
 
-    # Convert string input to message format if needed
+    # Validate input is not empty
     if isinstance(request.input, str):
+        if not request.input.strip():
+            raise HTTPException(status_code=422, detail="Input cannot be empty")
         # Single string input - convert to user message
         from server.schemas.responses import InputMessage
         input_messages = [InputMessage(role="user", content=request.input)]
     else:
+        if not request.input:
+            raise HTTPException(status_code=422, detail="Input cannot be empty")
         input_messages = request.input
 
-    # Handle missing databricks_options (for OpenAI compatibility)
-    databricks_opts = request.databricks_options or DatabricksOptions(user_id=0)
+    # Validate databricks_options and user_id
+    if not request.databricks_options:
+        raise HTTPException(status_code=422, detail="databricks_options is required")
+
+    databricks_opts = request.databricks_options
+    if databricks_opts.user_id is None or databricks_opts.user_id == 0:
+        raise HTTPException(status_code=422, detail="databricks_options.user_id is required")
 
     # Get or create conversation
     async with get_db_context() as session:
