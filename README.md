@@ -5,11 +5,13 @@ A production-ready agent backend built on Databricks Apps + Lakebase, implementi
 ## Features
 
 - **OpenResponses-compatible /responses API** - Supports streaming, non-streaming, and background modes
+- **Hosted Tools Support** - Server-side tools (calculator, time, weather) with streaming tool calls
 - **Pluggable database backend** - SQLite for local dev, PostgreSQL for production
 - **Estore-compatible conversation schema** - Message ordering via `message_index`
 - **Databricks LLM integration** - Via OpenAI SDK with automatic authentication
 - **Input validation** - Proper error handling with 422 responses
 - **FastAPI + uvicorn** - High-performance async web framework
+- **Declarative Agent SDK** - Define agents via YAML, execute with Python
 
 ## Architecture
 
@@ -232,6 +234,92 @@ See the [`examples/`](./examples/) directory for complete examples:
 
 - [SDK Documentation](./sdk/README.md) - Full API reference
 - [Examples Guide](./examples/README.md) - Running examples and creating custom agents
+
+## Hosted Tools
+
+Server-side tools that execute within the backend, with full streaming support.
+
+### Available Tools
+
+| Tool | Description | Example Usage |
+|------|-------------|---------------|
+| `calculator` | Perform mathematical calculations | "What is 25 * 4?" |
+| `get_current_time` | Get current date and time | "What time is it?" |
+| `get_weather` | Get weather information (mock) | "What's the weather in SF?" |
+
+### Using Tools
+
+**Non-streaming:**
+```python
+response = await client.responses.create(
+    input=[{"role": "user", "content": "What is 144 / 12?"}],
+    tools=[{"type": "calculator"}],
+    extra_body={"databricks_options": {"user_id": 12345}}
+)
+```
+
+**Streaming (with tool calls):**
+```python
+stream = await client.responses.create(
+    input=[{"role": "user", "content": "Calculate 10+20 and tell me the time"}],
+    stream=True,
+    tools=[
+        {"type": "calculator"},
+        {"type": "get_current_time"}
+    ],
+    extra_body={"databricks_options": {"user_id": 12345}}
+)
+
+async for event in stream:
+    # Receive tool call arguments, execution results, and final response
+    # All streamed in real-time
+    print(event)
+```
+
+### How It Works
+
+```
+1. User: "What is 10 + 20?"
+2. Backend → LLM (with tools defined)
+3. LLM → Tool call: calculator("10 + 20")
+4. Backend executes calculator → Result: 30
+5. Backend → LLM (with tool result)
+6. LLM → Final response: "The answer is 30"
+7. Stream events to user in real-time
+```
+
+### Future Extensions
+
+The following features are designed but not yet implemented:
+
+#### Tool Choice Parameter
+Control when tools are used:
+```python
+tool_choice="auto"      # LLM decides (default)
+tool_choice="required"  # Must use a tool
+tool_choice="none"      # Don't use tools
+```
+
+#### Parallel Tool Calls
+Execute multiple tools simultaneously:
+```python
+# User: "What is 10+20, 5*6, and the current time?"
+# LLM makes 3 tool calls in parallel:
+#   - calculator("10+20")
+#   - calculator("5*6")
+#   - get_current_time()
+```
+
+#### Custom Tools
+Define your own hosted tools:
+```python
+@register_tool("database_query")
+async def query_database(query: str) -> dict:
+    # Your implementation
+    pass
+```
+
+See `tests/test_tools.py` for detailed specifications of future features.
 
 ## Configuration
 
