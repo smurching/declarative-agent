@@ -254,8 +254,11 @@ async def handle_responses(request: ResponsesRequest):
                     "content": content_dict.get("text", str(content_dict))
                 })
 
-            # Prepend history to input messages
-            input_messages = history + input_messages
+            # Create messages with history for LLM (don't modify input_messages)
+            messages_with_history = history + input_messages
+        else:
+            # No history for new conversations
+            messages_with_history = input_messages
         else:
             conv = await create_conversation(
                 session,
@@ -281,7 +284,7 @@ async def handle_responses(request: ResponsesRequest):
             _execute_response_background(
                 response_id,
                 conv.id,
-                input_messages,
+                messages_with_history,  # Use history-aware messages for LLM
                 request.model,
                 request.temperature,
             )
@@ -298,7 +301,7 @@ async def handle_responses(request: ResponsesRequest):
             _stream_openresponses_events(
                 response_id,
                 conv.id,
-                input_messages,
+                messages_with_history,  # Use history-aware messages for LLM
                 request.model,
                 request.temperature,
             ),
@@ -319,8 +322,8 @@ async def handle_responses(request: ResponsesRequest):
             )
             await session.commit()
 
-        # Generate response
-        llm_messages = _convert_input_messages(input_messages)
+        # Generate response (with conversation history)
+        llm_messages = _convert_input_messages(messages_with_history)
         response = await generate_response(
             llm_messages,
             stream=False,
