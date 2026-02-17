@@ -8,6 +8,7 @@ dependencies = [
     "uvicorn[standard]>=0.32.0",
     "sqlalchemy[asyncio]>=2.0.35",
     "asyncpg>=0.30.0",
+    "aiosqlite>=0.20.0",  # For local SQLite support
     "databricks-sdk>=0.40.0",
     "databricks-openai>=0.3.0",
     "python-dotenv>=1.0.1",

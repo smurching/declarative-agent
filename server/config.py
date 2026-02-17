@@ -12,8 +12,13 @@ class Settings(BaseSettings):
     databricks_host: str = ""
     databricks_token: str = ""
 
-    # Database Configuration (Lakebase)
+    # Database Configuration
     # Make all database fields optional to allow app to start even if DB not configured
+    # DB_TYPE can be "postgres" (for Lakebase) or "sqlite" (for local dev/testing)
+    db_type: str = "postgres"
+    sqlite_database: str = "./agent_backend.db"  # Path for SQLite database
+
+    # PostgreSQL/Lakebase Configuration
     pghost: str = ""
     pgport: int = 5432
     pgdatabase: str = "databricks_postgres"

@@ -1,4 +1,4 @@
-"""SQLAlchemy models for estore-compatible schema."""
+"""SQLAlchemy models for estore-compatible schema with multi-database support."""
 from sqlalchemy import (
     Column,
     Integer,
@@ -6,22 +6,145 @@ from sqlalchemy import (
     String,
     LargeBinary,
     TIMESTAMP,
-    Enum,
+    Enum as SQLEnum,
     ForeignKey,
     Boolean,
     Index,
     UniqueConstraint,
     Text,
+    TypeDecorator,
 )
-from sqlalchemy.dialects.postgresql import UUID, JSONB
+from sqlalchemy.dialects.postgresql import UUID as PG_UUID, JSONB
 from sqlalchemy.sql import func, text
 from sqlalchemy.orm import declarative_base, relationship
 import enum
+import uuid as uuid_module
+import json
+import os
 
 Base = declarative_base()
 
-# Use a custom schema that the service principal owns
+# Use a custom schema that the service principal owns (PostgreSQL only)
 SCHEMA_NAME = "agent_backend"
+
+
+def get_db_type():
+    """Get current database type from environment."""
+    return os.getenv("DB_TYPE", "postgres").lower()
+
+
+def table_args_with_schema(*args):
+    """
+    Create __table_args__ tuple with conditional schema.
+
+    For PostgreSQL: Includes schema in the dict.
+    For SQLite: Omits schema (not supported).
+    """
+    db_type = get_db_type()
+    if db_type == "postgres":
+        return args + ({"schema": SCHEMA_NAME},)
+    else:
+        return args + ({},)
+
+
+def enum_column(enum_class, name, **kwargs):
+    """
+    Create an Enum column that works across databases.
+
+    For PostgreSQL: Uses native ENUM type with schema.
+    For SQLite: Uses String column with validation.
+    """
+    db_type = get_db_type()
+    if db_type == "postgres":
+        return Column(
+            SQLEnum(enum_class, name=name, schema=SCHEMA_NAME, values_callable=lambda x: [e.value for e in x]),
+            **kwargs
+        )
+    else:
+        # SQLite: use String with check constraint
+        return Column(String(50), **kwargs)
+
+
+def fk_reference(table_name, column="id", **kwargs):
+    """
+    Create a ForeignKey reference that works across databases.
+
+    For PostgreSQL: Includes schema prefix.
+    For SQLite: No schema prefix.
+    """
+    db_type = get_db_type()
+    if db_type == "postgres":
+        return ForeignKey(f"{SCHEMA_NAME}.{table_name}.{column}", **kwargs)
+    else:
+        return ForeignKey(f"{table_name}.{column}", **kwargs)
+
+
+class UUID(TypeDecorator):
+    """
+    Platform-independent UUID type.
+
+    Uses PostgreSQL UUID on PostgreSQL, String(36) on SQLite.
+    """
+    impl = String
+    cache_ok = True
+
+    def load_dialect_impl(self, dialect):
+        if dialect.name == 'postgresql':
+            return dialect.type_descriptor(PG_UUID(as_uuid=True))
+        else:
+            return dialect.type_descriptor(String(36))
+
+    def process_bind_param(self, value, dialect):
+        if value is None:
+            return value
+        elif dialect.name == 'postgresql':
+            return value
+        else:
+            if isinstance(value, uuid_module.UUID):
+                return str(value)
+            return value
+
+    def process_result_value(self, value, dialect):
+        if value is None:
+            return value
+        elif dialect.name == 'postgresql':
+            if isinstance(value, uuid_module.UUID):
+                return value
+            return value
+        else:
+            if isinstance(value, str):
+                return uuid_module.UUID(value)
+            return value
+
+
+class JSON(TypeDecorator):
+    """
+    Platform-independent JSON type.
+
+    Uses JSONB on PostgreSQL, Text on SQLite (with JSON serialization).
+    """
+    impl = Text
+    cache_ok = True
+
+    def load_dialect_impl(self, dialect):
+        if dialect.name == 'postgresql':
+            return dialect.type_descriptor(JSONB)
+        else:
+            return dialect.type_descriptor(Text)
+
+    def process_bind_param(self, value, dialect):
+        if value is None:
+            return value
+        if dialect.name != 'postgresql':
+            return json.dumps(value)
+        return value
+
+    def process_result_value(self, value, dialect):
+        if value is None:
+            return value
+        if dialect.name != 'postgresql':
+            return json.loads(value)
+        return value
 
 
 class MessageRole(str, enum.Enum):
@@ -48,11 +171,7 @@ class Conversation(Base):
 
     __tablename__ = "conversations"
 
-    id = Column(
-        UUID(as_uuid=True),
-        primary_key=True,
-        server_default=text("gen_random_uuid()"),
-    )
+    id = Column(UUID(), primary_key=True, default=uuid_module.uuid4)
     internal_workspace_id = Column(BigInteger, nullable=False)
     internal_last_updated_timestamp = Column(
         TIMESTAMP(), server_default=func.now(), onupdate=func.now()
@@ -64,10 +183,9 @@ class Conversation(Base):
     messages = relationship("Message", back_populates="conversation", cascade="all, delete-orphan")
     responses = relationship("Response", back_populates="conversation", cascade="all, delete-orphan")
 
-    __table_args__ = (
+    __table_args__ = table_args_with_schema(
         Index("idx_user_workspace", "user_id", "internal_workspace_id"),
         Index("idx_created", "created_timestamp"),
-        {"schema": SCHEMA_NAME},
     )
 
 
@@ -80,17 +198,13 @@ class Message(Base):
 
     __tablename__ = "messages"
 
-    id = Column(
-        UUID(as_uuid=True),
-        primary_key=True,
-        server_default=text("gen_random_uuid()"),
-    )
+    id = Column(UUID(), primary_key=True, default=uuid_module.uuid4)
     conversation_id = Column(
-        UUID(as_uuid=True),
-        ForeignKey(f"{SCHEMA_NAME}.conversations.id", ondelete="CASCADE"),
+        UUID(),
+        fk_reference("conversations", ondelete="CASCADE"),
         nullable=False,
     )
-    role = Column(Enum(MessageRole, name='message_role', schema=SCHEMA_NAME, values_callable=lambda x: [e.value for e in x]), nullable=False)
+    role = enum_column(MessageRole, 'message_role', nullable=False)
     created_timestamp = Column(TIMESTAMP(), server_default=func.now())
     message_index = Column(Integer, nullable=False)
     content = Column(LargeBinary, nullable=False)  # JSON serialized as bytes
@@ -99,10 +213,9 @@ class Message(Base):
     # Relationships
     conversation = relationship("Conversation", back_populates="messages")
 
-    __table_args__ = (
+    __table_args__ = table_args_with_schema(
         UniqueConstraint("conversation_id", "message_index", name="message_index_unique"),
         Index("idx_conversation_messages", "conversation_id", "message_index"),
-        {"schema": SCHEMA_NAME},
     )
 
 
@@ -117,27 +230,22 @@ class Response(Base):
 
     id = Column(String(64), primary_key=True)  # resp_abc123
     conversation_id = Column(
-        UUID(as_uuid=True),
-        ForeignKey(f"{SCHEMA_NAME}.conversations.id", ondelete="CASCADE"),
+        UUID(),
+        fk_reference("conversations", ondelete="CASCADE"),
         nullable=False,
     )
-    status = Column(
-        Enum(ResponseStatus, name='response_status', schema=SCHEMA_NAME, values_callable=lambda x: [e.value for e in x]),
-        nullable=False,
-        server_default=text("'in_progress'"),
-    )
-    background = Column(Boolean, nullable=False, server_default=text("false"))
+    status = enum_column(ResponseStatus, 'response_status', nullable=False, default=ResponseStatus.IN_PROGRESS)
+    background = Column(Boolean, nullable=False, default=False)
     created_timestamp = Column(TIMESTAMP(), server_default=func.now())
     completed_timestamp = Column(TIMESTAMP(), nullable=True)
     current_progress = Column(Text, nullable=True)  # Partial output for resumption
-    final_output = Column(JSONB, nullable=True)  # Completed output
+    final_output = Column(JSON(), nullable=True)  # Completed output
     error_message = Column(Text, nullable=True)
 
     # Relationships
     conversation = relationship("Conversation", back_populates="responses")
 
-    __table_args__ = (
+    __table_args__ = table_args_with_schema(
         Index("idx_conversation_responses", "conversation_id", "created_timestamp"),
         Index("idx_status", "status"),
-        {"schema": SCHEMA_NAME},
     )

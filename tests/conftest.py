@@ -29,29 +29,46 @@ async def test_db_engine():
     """
     Create a test database engine.
 
-    Uses a separate test database to avoid affecting production data.
+    Uses SQLite for local testing (no auth needed).
+    Uses PostgreSQL for deployed testing (with auth).
     """
     settings = get_settings()
 
-    # Create test database URL
-    # In production, you might want to use a completely separate test database
-    test_db_url = (
-        f"postgresql+asyncpg://{settings.pguser}:{{token}}@"
-        f"{settings.pghost}:{settings.pgport}/test_{settings.pgdatabase}"
-    )
+    # Use SQLite for local testing by default
+    db_type = os.getenv("DB_TYPE", "sqlite").lower()
 
-    # For testing, we'll use the same database but with a unique schema
-    # In a real scenario, you'd create a separate test database
-    from server.auth.databricks import get_databricks_oauth_token
-    token = await get_databricks_oauth_token()
+    if db_type == "sqlite":
+        # SQLite: Create temporary test database
+        test_db_path = "./test_agent_backend.db"
 
-    test_db_url = test_db_url.format(token=token)
+        # Remove existing test database
+        if os.path.exists(test_db_path):
+            os.remove(test_db_path)
 
-    engine = create_async_engine(
-        test_db_url,
-        poolclass=NullPool,
-        echo=False,
-    )
+        test_db_url = f"sqlite+aiosqlite:///{test_db_path}"
+
+        from sqlalchemy.pool import StaticPool
+        engine = create_async_engine(
+            test_db_url,
+            poolclass=StaticPool,
+            echo=False,
+            connect_args={"check_same_thread": False},
+        )
+    else:
+        # PostgreSQL: For deployed testing (requires auth)
+        from server.auth.databricks import get_databricks_oauth_token
+        token = await get_databricks_oauth_token()
+
+        test_db_url = (
+            f"postgresql+asyncpg://{settings.pguser}:{token}@"
+            f"{settings.pghost}:{settings.pgport}/test_{settings.pgdatabase}"
+        )
+
+        engine = create_async_engine(
+            test_db_url,
+            poolclass=NullPool,
+            echo=False,
+        )
 
     # Create all tables
     async with engine.begin() as conn:
@@ -64,6 +81,10 @@ async def test_db_engine():
         await conn.run_sync(Base.metadata.drop_all)
 
     await engine.dispose()
+
+    # Remove SQLite test database
+    if db_type == "sqlite" and os.path.exists(test_db_path):
+        os.remove(test_db_path)
 
 
 @pytest.fixture
