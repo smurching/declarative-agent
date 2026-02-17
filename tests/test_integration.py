@@ -140,8 +140,9 @@ class TestCompleteConversationFlow:
                 if event_data != "[DONE]":
                     try:
                         event = json.loads(event_data)
-                        if event.get("type") == "response.output_item.delta":
-                            full_response += event["delta"]["text"]
+                        # Updated to match OpenResponses format
+                        if event.get("type") == "response.output_text.delta":
+                            full_response += event["delta"]  # delta is a string, not an object
                     except json.JSONDecodeError:
                         pass
 

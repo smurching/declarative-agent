@@ -75,10 +75,10 @@ async def _stream_openresponses_events(
         async for chunk in stream_llm_response(llm_messages, model, temperature):
             response_text += chunk
 
-            # Send delta event
+            # Send delta event (OpenResponses format)
             event = {
-                "type": "response.output_item.delta",
-                "delta": {"text": chunk},
+                "type": "response.output_text.delta",
+                "delta": chunk,
             }
             yield f"data: {json.dumps(event)}\n\n"
 

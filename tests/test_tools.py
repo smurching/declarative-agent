@@ -106,10 +106,10 @@ class TestHostedTools:
         full_text = ""
         async for event in stream:
             events.append(event)
-            # Accumulate text deltas
-            if hasattr(event, 'delta') and event.delta:
-                if hasattr(event.delta, 'content'):
-                    full_text += event.delta.content or ""
+            # Accumulate text from delta events (OpenResponses format: delta is a string)
+            if hasattr(event, 'type') and 'delta' in str(event.type):
+                if hasattr(event, 'delta') and isinstance(event.delta, str):
+                    full_text += event.delta
 
         # Should have received events
         assert len(events) > 0
@@ -258,10 +258,10 @@ class TestStreamingWithToolCalls:
                 if 'tool' in str(event.type).lower() and 'result' in str(event.type).lower():
                     tool_result_events.append(event)
 
-            # Accumulate text
-            if hasattr(event, 'delta') and event.delta:
-                if hasattr(event.delta, 'content'):
-                    full_text += event.delta.content or ""
+            # Accumulate text from delta events (OpenResponses format: delta is a string)
+            if hasattr(event, 'type') and 'delta' in str(event.type):
+                if hasattr(event, 'delta') and isinstance(event.delta, str):
+                    full_text += event.delta
 
         # Should have received events
         assert len(events) > 0
@@ -291,9 +291,10 @@ class TestStreamingWithToolCalls:
 
         async for event in stream:
             events.append(event)
-            if hasattr(event, 'delta') and event.delta:
-                if hasattr(event.delta, 'content'):
-                    full_text += event.delta.content or ""
+            # Accumulate text from delta events (OpenResponses format: delta is a string)
+            if hasattr(event, 'type') and 'delta' in str(event.type):
+                if hasattr(event, 'delta') and isinstance(event.delta, str):
+                    full_text += event.delta
 
         # Should have many events (tool calls + results + text)
         assert len(events) > 5
@@ -319,10 +320,10 @@ class TestStreamingWithToolCalls:
                 event_types.add(event.type)
 
         # Expected event types might include:
-        # - response.output_item.delta (text chunks)
+        # - response.output_text.delta (text chunks)
         # - response.output_item.done (completion)
-        # - tool_call.start / tool_call.delta / tool_call.done (optional)
-        # - tool_result.start / tool_result.done (optional)
+        # - response.function_call_arguments.delta (tool call args)
+        # - tool_call.* / tool_result.* events (optional)
 
         # At minimum should have delta events
         assert any('delta' in str(t).lower() for t in event_types)
@@ -341,10 +342,10 @@ class TestStreamingWithToolCalls:
         done_event_received = False
 
         async for event in stream:
-            # Accumulate text
-            if hasattr(event, 'delta') and event.delta:
-                if hasattr(event.delta, 'content'):
-                    full_text += event.delta.content or ""
+            # Accumulate text from delta events (OpenResponses format: delta is a string)
+            if hasattr(event, 'type') and 'delta' in str(event.type):
+                if hasattr(event, 'delta') and isinstance(event.delta, str):
+                    full_text += event.delta
 
             # Check for done event
             if hasattr(event, 'type') and 'done' in str(event.type).lower():
@@ -371,9 +372,10 @@ class TestStreamingWithToolCalls:
 
         async for event in stream:
             events.append(event)
-            if hasattr(event, 'delta') and event.delta:
-                if hasattr(event.delta, 'content'):
-                    full_text += event.delta.content or ""
+            # Accumulate text from delta events (OpenResponses format: delta is a string)
+            if hasattr(event, 'type') and 'delta' in str(event.type):
+                if hasattr(event, 'delta') and isinstance(event.delta, str):
+                    full_text += event.delta
 
         # Should stream normally without using calculator
         assert len(events) > 0
