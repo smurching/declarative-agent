@@ -14,22 +14,44 @@ class AgentRunner:
     Supports streaming, non-streaming, and background execution modes.
     """
 
-    def __init__(self, agent: DeclarativeAgent, user_id: int):
+    def __init__(self, agent: DeclarativeAgent, user_id: int, workspace_profile: Optional[str] = None):
         """
         Initialize runner.
 
         Args:
             agent: Declarative agent to run
             user_id: User ID for backend requests
+            workspace_profile: Optional Databricks workspace profile for authentication
+                             (required for Databricks Apps URLs)
         """
         self.agent = agent
         self.user_id = user_id
 
-        # Initialize OpenAI client pointing to our backend
-        self.client = AsyncOpenAI(
-            base_url=f"{agent.backend_url}/v1",
-            api_key="not-needed",  # Backend doesn't require API key for local testing
-        )
+        # Check if this is a Databricks Apps URL (requires special auth)
+        is_databricks_app = "databricksapps.com" in agent.backend_url.lower()
+
+        if is_databricks_app:
+            # Use DatabricksOpenAI for Databricks Apps authentication
+            try:
+                from databricks_openai import AsyncDatabricksOpenAI
+                from databricks.sdk import WorkspaceClient
+
+                w = WorkspaceClient(profile=workspace_profile) if workspace_profile else WorkspaceClient()
+                self.client = AsyncDatabricksOpenAI(
+                    base_url=agent.backend_url,
+                    workspace_client=w
+                )
+            except ImportError:
+                raise ImportError(
+                    "databricks-openai and databricks-sdk are required for Databricks Apps. "
+                    "Install with: pip install databricks-openai databricks-sdk"
+                )
+        else:
+            # Use standard OpenAI client for local/non-Databricks backends
+            self.client = AsyncOpenAI(
+                base_url=f"{agent.backend_url}/v1",
+                api_key="not-needed",  # Backend doesn't require API key for local testing
+            )
 
     def _prepare_messages(self, user_message: str) -> List[Dict[str, str]]:
         """Prepare messages including system instructions if defined."""

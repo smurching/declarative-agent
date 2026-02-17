@@ -5,6 +5,7 @@ These tests verify complete user workflows from API request to database persiste
 """
 import pytest
 import json
+import os
 from httpx import AsyncClient
 
 
@@ -277,6 +278,10 @@ class TestConcurrentRequests:
         response_ids = [r.json()["id"] for r in responses]
         assert len(response_ids) == len(set(response_ids))
 
+    @pytest.mark.skipif(
+        os.getenv("DB_TYPE", "postgres").lower() == "sqlite",
+        reason="SQLite doesn't support concurrent writes (file-level locking)"
+    )
     @pytest.mark.asyncio
     async def test_concurrent_messages_same_conversation(
         self, async_client, sample_user_id
@@ -286,6 +291,8 @@ class TestConcurrentRequests:
         1. Send multiple messages to same conversation simultaneously
         2. Verify all are persisted
         3. Verify message_index ordering is maintained
+
+        Note: Skipped for SQLite due to file-level locking limitations.
         """
         import asyncio
 
