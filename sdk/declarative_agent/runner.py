@@ -169,7 +169,7 @@ class AgentRunner:
             return {
                 "id": response.id,
                 "status": response.status,
-                "output": response.output if response.output else None,
+                "output": [{"role": item.role, "content": item.content} for item in response.output] if response.output else None,
             }
 
     async def close(self):

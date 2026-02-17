@@ -17,12 +17,11 @@ from sqlalchemy import (
 from sqlalchemy.dialects.postgresql import UUID as PG_UUID, JSONB
 from sqlalchemy.sql import func, text
 from sqlalchemy.orm import declarative_base, relationship
+from sqlalchemy import MetaData
 import enum
 import uuid as uuid_module
 import json
 import os
-
-Base = declarative_base()
 
 # Use a custom schema that the service principal owns (PostgreSQL only)
 SCHEMA_NAME = "agent_backend"
@@ -31,6 +30,28 @@ SCHEMA_NAME = "agent_backend"
 def get_db_type():
     """Get current database type from environment."""
     return os.getenv("DB_TYPE", "postgres").lower()
+
+
+def _is_postgres():
+    """Check if we're using PostgreSQL (vs SQLite for testing)."""
+    # If PGHOST is set, we're definitely using PostgreSQL
+    if os.getenv("PGHOST"):
+        return True
+    # If DB_TYPE is explicitly set to postgres
+    if os.getenv("DB_TYPE", "").lower() == "postgres":
+        return True
+    # Default to SQLite for local testing
+    return False
+
+
+# Create Base with schema already set for PostgreSQL
+if _is_postgres():
+    print(f"[MODELS] Creating Base with schema: {SCHEMA_NAME} (PGHOST={os.getenv('PGHOST', 'NOT SET')})")
+    metadata = MetaData(schema=SCHEMA_NAME)
+    Base = declarative_base(metadata=metadata)
+else:
+    print(f"[MODELS] Creating Base without schema (PGHOST={os.getenv('PGHOST', 'NOT SET')}, DB_TYPE={os.getenv('DB_TYPE', 'NOT SET')})")
+    Base = declarative_base()
 
 
 # Note: Schema is only used for PostgreSQL, SQLite ignores it
@@ -132,7 +153,6 @@ class Conversation(Base):
     __table_args__ = (
         Index("idx_user_workspace", "user_id", "internal_workspace_id"),
         Index("idx_created", "created_timestamp"),
-        {"schema": SCHEMA_NAME if get_db_type() == "postgres" else None}
     )
 
     id = Column(UUID(), primary_key=True, default=uuid_module.uuid4)
@@ -159,13 +179,11 @@ class Message(Base):
     __table_args__ = (
         UniqueConstraint("conversation_id", "message_index", name="message_index_unique"),
         Index("idx_conversation_messages", "conversation_id", "message_index"),
-        {"schema": SCHEMA_NAME if get_db_type() == "postgres" else None}
     )
 
     id = Column(UUID(), primary_key=True, default=uuid_module.uuid4)
-    # Use schema-qualified FK for PostgreSQL
-    fk_target = f"{SCHEMA_NAME}.conversations.id" if get_db_type() == "postgres" else "conversations.id"
-    conversation_id = Column(UUID(), ForeignKey(fk_target, ondelete="CASCADE"), nullable=False)
+    # FK will be set based on Base.metadata.schema (set at runtime in main.py)
+    conversation_id = Column(UUID(), ForeignKey("conversations.id", ondelete="CASCADE"), nullable=False)
     role = Column(String(20), nullable=False)  # Store enum as string
     created_timestamp = Column(TIMESTAMP(), server_default=func.now())
     message_index = Column(Integer, nullable=False)
@@ -187,13 +205,11 @@ class Response(Base):
     __table_args__ = (
         Index("idx_conversation_responses", "conversation_id", "created_timestamp"),
         Index("idx_status", "status"),
-        {"schema": SCHEMA_NAME if get_db_type() == "postgres" else None}
     )
 
     id = Column(String(64), primary_key=True)  # resp_abc123
-    # Use schema-qualified FK for PostgreSQL
-    fk_target = f"{SCHEMA_NAME}.conversations.id" if get_db_type() == "postgres" else "conversations.id"
-    conversation_id = Column(UUID(), ForeignKey(fk_target, ondelete="CASCADE"), nullable=False)
+    # FK will be set based on Base.metadata.schema (set at runtime in main.py)
+    conversation_id = Column(UUID(), ForeignKey("conversations.id", ondelete="CASCADE"), nullable=False)
     status = Column(String(20), nullable=False, default="in_progress")  # Store enum as string
     background = Column(Boolean, nullable=False, default=False)
     created_timestamp = Column(TIMESTAMP(), server_default=func.now())

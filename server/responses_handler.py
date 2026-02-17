@@ -240,6 +240,21 @@ async def handle_responses(request: ResponsesRequest):
             conv = await get_conversation(session, databricks_opts.conversation_id)
             if not conv:
                 raise HTTPException(status_code=404, detail="Conversation not found")
+
+            # Load conversation history to include in LLM context
+            from server.db.queries import get_messages
+            import json
+            messages = await get_messages(session, conv.id)
+            history = []
+            for msg in messages:
+                content_dict = json.loads(msg.content.decode("utf-8"))
+                history.append({
+                    "role": msg.role.lower() if hasattr(msg.role, 'lower') else msg.role.value.lower(),
+                    "content": content_dict.get("text", str(content_dict))
+                })
+
+            # Prepend history to input messages
+            input_messages = history + input_messages
         else:
             conv = await create_conversation(
                 session,
