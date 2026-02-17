@@ -353,9 +353,12 @@ async def get_response(response_id: str, stream: bool = False):
     if not response_record:
         raise HTTPException(status_code=404, detail="Response not found")
 
+    # Status is stored as string in DB, normalize for comparison
+    status_str = response_record.status if isinstance(response_record.status, str) else response_record.status.value
+
     if stream:
         # Resume streaming from current progress
-        if response_record.status == ResponseStatus.COMPLETED:
+        if status_str == ResponseStatus.COMPLETED.value:
             # Already completed, stream the final output
             async def stream_completed():
                 if response_record.final_output:
@@ -372,7 +375,7 @@ async def get_response(response_id: str, stream: bool = False):
 
             return StreamingResponse(stream_completed(), media_type="text/event-stream")
 
-        elif response_record.status == ResponseStatus.FAILED:
+        elif status_str == ResponseStatus.FAILED.value:
             raise HTTPException(status_code=500, detail=response_record.error_message)
 
         else:
@@ -393,7 +396,7 @@ async def get_response(response_id: str, stream: bool = False):
 
         return RetrieveResponseResponse(
             id=response_id,
-            status=response_record.status.value,
+            status=status_str,
             output=output,
             current_progress=response_record.current_progress,
             error_message=response_record.error_message,
