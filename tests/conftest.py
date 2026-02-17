@@ -139,11 +139,17 @@ async def openai_client(base_url: str, is_local: bool) -> AsyncGenerator[Union[A
         # Test deployed app (with Databricks auth)
         BASE_URL=https://your-workspace.cloud.databricks.com/apps/your-app pytest
     """
+    # Ensure base_url ends with /v1 for OpenAI client
+    if not base_url.endswith("/v1"):
+        openai_base_url = f"{base_url}/v1"
+    else:
+        openai_base_url = base_url
+
     if is_local:
         # Local testing - use standard OpenAI client with dummy key
         client = AsyncOpenAI(
-            base_url=base_url,
-            api_key="",  # Empty string for local testing (no auth needed)
+            base_url=openai_base_url,
+            api_key="not-needed",  # Dummy key for local testing
         )
     else:
         # Databricks Apps - use DatabricksOpenAI with automatic auth
@@ -153,12 +159,12 @@ async def openai_client(base_url: str, is_local: bool) -> AsyncGenerator[Union[A
             from databricks.sdk import WorkspaceClient
             w = WorkspaceClient(profile=profile)
             client = AsyncDatabricksOpenAI(
-                base_url=base_url,
+                base_url=openai_base_url,
                 workspace_client=w,
             )
         else:
             client = AsyncDatabricksOpenAI(
-                base_url=base_url,
+                base_url=openai_base_url,
             )
 
     try:
