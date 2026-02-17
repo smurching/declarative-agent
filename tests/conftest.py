@@ -39,7 +39,8 @@ async def test_db_engine():
 
     if db_type == "sqlite":
         # SQLite: Create temporary test database
-        test_db_path = "./test_agent_backend.db"
+        # Use a different path than the server's database to avoid conflicts
+        test_db_path = "./test_fixtures.db"
 
         # Remove existing test database
         if os.path.exists(test_db_path):
