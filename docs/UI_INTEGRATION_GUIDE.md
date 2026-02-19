@@ -386,7 +386,7 @@ data: [DONE]
 
 ### Step 3.1: Clone UI Template with OpenResponses Support
 
-**Option A: Use PR branch (recommended until PR merges)**
+**Option A: Use PR branch (recommended until PRs merge)**
 
 ```bash
 # Clone the template with OpenResponses support
@@ -398,7 +398,7 @@ git checkout feature/openresponses-support
 npm install
 ```
 
-**Option B: Use official template (after PR merges)**
+**Option B: Use official template (after PRs merge)**
 
 ```bash
 git clone https://github.com/databricks/app-templates.git
@@ -408,14 +408,24 @@ npm install
 
 **What's OpenResponses support?**
 
-The e2e-chatbot-app-next template needs OpenResponses format support to work with declarative agents. This includes:
-- `agent-client.ts` module for calling agent `/invocations` endpoints
-- `parseOpenResponsesStream()` for parsing SSE events
-- Proper UIMessageStream event schema (text-start, text-delta with IDs)
+OpenResponses support enables the chatbot UI to work with declarative agent apps. As of February 2026, this is implemented in two parts:
 
-**PR:** [Add OpenResponses format streaming support](https://github.com/databricks/app-templates/compare/main...smurching:app-templates:feature/openresponses-support) (pending merge)
+1. **@databricks/ai-sdk-provider (v0.5.0+)** - Core OpenResponses streaming format support
+   - Zod schemas for event validation
+   - SSE stream parser and transformer
+   - AI SDK v3 LanguageModel implementation
+   - Used by all TypeScript/JavaScript consumers
 
-**⚠️ Note:** Until the PR merges, use the feature branch. Once merged, the official template will include OpenResponses support out-of-the-box.
+2. **e2e-chatbot-app-next template** - Uses the bridge's OpenResponses support
+   - Simplified provider configuration (no wrapper needed)
+   - `agent-client.ts` for direct agent invocations
+   - Proper UIMessageStream event handling
+
+**Related PRs:**
+- [databricks-ai-bridge: Add OpenResponses support](https://github.com/databricks/databricks-ai-bridge/compare/main...smurching:databricks-ai-bridge:feature/add-openresponses-support) (adds provider support)
+- [app-templates: Use bridge OpenResponses](https://github.com/databricks/app-templates/compare/main...smurching:app-templates:feature/openresponses-support) (uses new provider)
+
+**⚠️ Note:** Until the PRs merge, use the feature branch. Once merged, the official template will include OpenResponses support out-of-the-box.
 
 ### Step 3.2: Install Dependencies
 
