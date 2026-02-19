@@ -184,9 +184,20 @@ class AgentRunner:
         # Make streaming HTTP request to backend
         url = f"{self.agent.backend_url}/v1/responses"
 
+        # Get authentication headers if in Databricks Apps context
+        headers = {}
+        if os.getenv("DATABRICKS_HOST"):
+            try:
+                from databricks.sdk import WorkspaceClient
+                w = WorkspaceClient()
+                token = w.config.authenticate()
+                headers["Authorization"] = f"Bearer {token}"
+            except Exception as e:
+                logger.warning(f"Could not get Databricks auth token: {e}")
+
         async with httpx.AsyncClient(timeout=300.0) as client:
             try:
-                async with client.stream("POST", url, json=request) as response:
+                async with client.stream("POST", url, json=request, headers=headers) as response:
                     response.raise_for_status()
 
                     # Parse SSE stream
