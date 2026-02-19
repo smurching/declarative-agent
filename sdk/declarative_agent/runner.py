@@ -6,6 +6,7 @@ import asyncio
 import json
 import httpx
 import logging
+import os
 
 from .agent import DeclarativeAgent
 
