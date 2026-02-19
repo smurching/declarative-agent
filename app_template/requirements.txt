@@ -1,4 +1,4 @@
 # Install declarative-agent CLI from GitHub
 # This provides the 'declarative-agent' command with all dependencies
-# Updated: 2026-02-19 22:54 - v0.1.4 with backend auth fix
+# Updated: 2026-02-19 23:22 - v0.1.5 with OAuth token fix
 git+https://github.com/smurching/declarative-agent.git@main

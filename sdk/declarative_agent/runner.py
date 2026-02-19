@@ -191,19 +191,14 @@ class AgentRunner:
             try:
                 from databricks.sdk import WorkspaceClient
                 w = WorkspaceClient()
-                # Get OAuth token for service principal
-                if hasattr(w.config, 'token') and callable(w.config.token):
-                    token = w.config.token()
-                elif hasattr(w.config, 'auth_token'):
-                    token = w.config.auth_token
-                else:
-                    # Fallback: trigger authentication and get token
-                    w.config.authenticate()
-                    token = w.config.token() if callable(w.config.token) else w.config.auth_token
-
-                if token:
+                # Trigger auth and get token from credentials provider
+                credentials = w.config.authenticate()
+                if credentials and hasattr(credentials, 'token'):
+                    token = credentials.token()
                     headers["Authorization"] = f"Bearer {token}"
                     logger.debug("Added Databricks auth header for backend request")
+                else:
+                    logger.warning("Could not extract token from credentials")
             except Exception as e:
                 logger.warning(f"Could not get Databricks auth token: {e}")
 
