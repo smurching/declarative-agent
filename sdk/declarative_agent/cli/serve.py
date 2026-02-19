@@ -109,29 +109,29 @@ def serve_command(
                     click.echo("Please start the backend manually or use a localhost URL", err=True)
                     sys.exit(1)
 
-            # Step 2: Auto-start backend
-            click.echo(f"Backend not running, starting on port {backend_port}...")
-            backend_process = start_backend(port=backend_port, reload=reload)
+                # Step 2: Auto-start backend
+                click.echo(f"Backend not running, starting on port {backend_port}...")
+                backend_process = start_backend(port=backend_port, reload=reload)
 
-            # Stream backend logs in background thread
-            def stream_backend_logs():
-                stream_process_output(backend_process, prefix="[backend] ")
+                # Stream backend logs in background thread
+                def stream_backend_logs():
+                    stream_process_output(backend_process, prefix="[backend] ")
 
-            log_thread = threading.Thread(target=stream_backend_logs, daemon=True)
-            log_thread.start()
+                log_thread = threading.Thread(target=stream_backend_logs, daemon=True)
+                log_thread.start()
 
-            # Wait for backend to be healthy
-            click.echo("Waiting for backend to start...")
-            if not wait_for_backend(backend_url, timeout=30):
-                click.echo("Error: Backend failed to start within 30 seconds", err=True)
-                if backend_process and backend_process.poll() is not None:
-                    click.echo(f"Backend process exited with code: {backend_process.returncode}", err=True)
-                cleanup()
-                sys.exit(1)
+                # Wait for backend to be healthy
+                click.echo("Waiting for backend to start...")
+                if not wait_for_backend(backend_url, timeout=30):
+                    click.echo("Error: Backend failed to start within 30 seconds", err=True)
+                    if backend_process and backend_process.poll() is not None:
+                        click.echo(f"Backend process exited with code: {backend_process.returncode}", err=True)
+                    cleanup()
+                    sys.exit(1)
 
-            click.echo("✓ Backend started successfully")
-        else:
-            click.echo("✓ Backend already running")
+                click.echo("✓ Backend started successfully")
+            else:
+                click.echo("✓ Backend already running")
 
         # Step 3: Set environment variables for agent app
         env = os.environ.copy()
