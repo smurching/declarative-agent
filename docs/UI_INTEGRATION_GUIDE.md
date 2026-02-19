@@ -384,6 +384,8 @@ data: [DONE]
 
 ## Part 3: Build the UI
 
+> **✅ Quick Start:** For a complete working setup using PR branches, see [WORKING_SETUP_GUIDE.md](WORKING_SETUP_GUIDE.md)
+
 ### Step 3.1: Clone UI Template with OpenResponses Support
 
 **Option A: Use PR branch (recommended until PRs merge)**
@@ -422,10 +424,32 @@ OpenResponses support enables the chatbot UI to work with declarative agent apps
    - Proper UIMessageStream event handling
 
 **Related PRs:**
-- [databricks-ai-bridge: Add OpenResponses support](https://github.com/databricks/databricks-ai-bridge/compare/main...smurching:databricks-ai-bridge:feature/add-openresponses-support) (adds provider support)
-- [app-templates: Use bridge OpenResponses](https://github.com/databricks/app-templates/compare/main...smurching:app-templates:feature/openresponses-support) (uses new provider)
+- [databricks-ai-bridge #335: Add OpenResponses support](https://github.com/databricks/databricks-ai-bridge/pull/335) (adds provider support)
+- [app-templates #125: Use bridge OpenResponses](https://github.com/databricks/app-templates/pull/125) (uses new provider)
 
-**⚠️ Note:** Until the PRs merge, use the feature branch. Once merged, the official template will include OpenResponses support out-of-the-box.
+**Local Development Setup:**
+
+For local testing with PR branches, use `npm link`:
+
+```bash
+# Set up databricks-ai-bridge
+cd ~/databricks-ai-bridge
+git checkout feature/add-openresponses-support
+cd integrations/ai-sdk-provider
+npm install && npm run build
+npm link
+
+# Link in chatbot app
+cd ~/app-templates/e2e-chatbot-app-next/packages/ai-sdk-providers
+npm install
+npm link @databricks/ai-sdk-provider
+
+# Install root dependencies
+cd ~/app-templates/e2e-chatbot-app-next
+npm install
+```
+
+**⚠️ Note:** Until the PRs merge, use the feature branches with npm link. Once merged, the official template will include OpenResponses support out-of-the-box.
 
 ### Step 3.2: Install Dependencies
 
