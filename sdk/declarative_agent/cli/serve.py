@@ -90,20 +90,24 @@ def serve_command(
     signal.signal(signal.SIGTERM, lambda sig, frame: (cleanup(), sys.exit(0)))
 
     try:
-        # Step 1: Check if backend is running
-        backend_healthy = check_backend_health(backend_url)
+        # Step 1: Check if backend is running (skip for non-localhost with --no-backend)
+        if no_backend and not is_localhost_url(backend_url):
+            # User explicitly managing backend on remote URL, skip health check
+            click.echo(f"Using remote backend at {backend_url} (skipping health check)")
+        else:
+            backend_healthy = check_backend_health(backend_url)
 
-        if not backend_healthy:
-            if no_backend:
-                click.echo(f"Error: Backend not running at {backend_url} and --no-backend specified", err=True)
-                click.echo("Please start the backend manually or remove --no-backend flag", err=True)
-                sys.exit(1)
+            if not backend_healthy:
+                if no_backend:
+                    click.echo(f"Error: Backend not running at {backend_url} and --no-backend specified", err=True)
+                    click.echo("Please start the backend manually or remove --no-backend flag", err=True)
+                    sys.exit(1)
 
-            if not is_localhost_url(backend_url):
-                click.echo(f"Error: Backend not running at {backend_url}", err=True)
-                click.echo("Cannot auto-start backend for non-localhost URLs", err=True)
-                click.echo("Please start the backend manually or use a localhost URL", err=True)
-                sys.exit(1)
+                if not is_localhost_url(backend_url):
+                    click.echo(f"Error: Backend not running at {backend_url}", err=True)
+                    click.echo("Cannot auto-start backend for non-localhost URLs", err=True)
+                    click.echo("Please start the backend manually or use a localhost URL", err=True)
+                    sys.exit(1)
 
             # Step 2: Auto-start backend
             click.echo(f"Backend not running, starting on port {backend_port}...")

@@ -4,26 +4,15 @@
 command:
   - "declarative-agent"
   - "serve"
-  - "my_agent.yaml"
+  - "data_analyst.yaml"
   - "--backend-url"
-  - "${BACKEND_URL}"
+  - "https://dev-agent-backend-3217006663075879.aws.databricksapps.com"
   - "--host"
   - "0.0.0.0"
   - "--port"
   - "8000"
+  - "--no-backend"
 
 env:
   - name: DATABRICKS_CLI_PROFILE
     value: "default"
-  - name: WORKSPACE_ID
-    value: "${var.workspace_id}"
-  - name: BACKEND_URL
-    value: "https://${var.backend_app_name}.databricksapps.com"
-
-# Resources this app depends on
-resources:
-  - name: backend-app
-    description: "Backend API for agent execution"
-    app:
-      name: "${var.backend_app_name}"
-      permission: CAN_USE
