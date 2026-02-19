@@ -201,11 +201,16 @@ class AgentRunner:
                     host = f"https://{host}"
 
                 token_url = f"{host}/oidc/v1/token"
+
+                # Extract backend app client ID from URL if possible
+                # Format: https://<app-name>-<workspace-id>.aws.databricksapps.com
+                backend_host = self.agent.backend_url.split('/')[2]  # Get hostname
+                # Request token with sql scope for Databricks API access
                 token_response = auth_httpx.post(
                     token_url,
                     data={
                         "grant_type": "client_credentials",
-                        "scope": "all-apis"
+                        "scope": "all-apis sql"
                     },
                     auth=(client_id, client_secret),
                     timeout=10.0
