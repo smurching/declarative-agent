@@ -43,8 +43,10 @@ class AgentRunner:
                 from databricks_openai import AsyncDatabricksOpenAI
                 from databricks.sdk import WorkspaceClient
 
+                logger.info(f"Initializing WorkspaceClient for Databricks Apps (profile: {workspace_profile})")
                 w = WorkspaceClient(profile=workspace_profile) if workspace_profile else WorkspaceClient()
                 self.workspace_client = w  # Store for later token retrieval
+                logger.info("WorkspaceClient initialized successfully")
                 self.client = AsyncDatabricksOpenAI(
                     base_url=agent.backend_url,
                     workspace_client=w
@@ -192,11 +194,13 @@ class AgentRunner:
         if self.workspace_client:
             try:
                 # Use WorkspaceClient to get properly scoped token for app-to-app auth
+                logger.info("Attempting to get token from WorkspaceClient...")
                 token = self.workspace_client.config.oauth_token().access_token
+                logger.info(f"Successfully got token from WorkspaceClient (length: {len(token)})")
                 headers["Authorization"] = f"Bearer {token}"
-                logger.debug("Added Databricks token from WorkspaceClient for backend request")
+                logger.info("Added Authorization header for backend request")
             except Exception as e:
-                logger.warning(f"Could not get Databricks token from WorkspaceClient: {e}")
+                logger.error(f"Failed to get Databricks token from WorkspaceClient: {e}", exc_info=True)
 
         async with httpx.AsyncClient(timeout=300.0) as client:
             try:
