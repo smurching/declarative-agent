@@ -1,0 +1,12 @@
+name: "my-agent"
+description: "My deployed agent on Databricks"
+model: "databricks-gpt-5-2"
+temperature: 0.7
+instructions: |
+  You are a helpful AI assistant deployed on Databricks Apps.
+
+  Provide clear, concise, and accurate responses to user questions.
+  When uncertain, acknowledge limitations rather than speculating.
+
+supports_streaming: true
+supports_background: false

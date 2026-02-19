@@ -39,7 +39,9 @@ app.add_middleware(
 )
 
 # Load agent configuration
-AGENT_PATH = Path(__file__).parent / "examples" / "agents" / "data_analyst.yaml"
+# Support both environment variable (for CLI) and default path (for direct deployment)
+default_agent_path = Path(__file__).parent / "examples" / "agents" / "data_analyst.yaml"
+AGENT_PATH = Path(os.getenv("AGENT_YAML_PATH", str(default_agent_path)))
 BACKEND_URL = os.getenv("BACKEND_APP_URL", "http://localhost:8000")
 ALLOWED_API_KEY = os.getenv("ALLOWED_API_KEY")  # Optional API key for app-to-app auth
 
