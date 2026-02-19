@@ -1,22 +1,23 @@
-# UI Integration Guide: Building a Declarative Agent with Browser UI
+# UI Integration Guide: Deploy a Web Chat Interface
 
-Complete step-by-step guide to building and deploying a Databricks declarative agent with streaming browser UI integration.
+Deploy a production-ready web chat interface for your declarative agent with streaming responses.
 
 ## Overview
 
-This guide walks through creating:
-1. **Backend** - FastAPI server with OpenResponses /v1/responses API
-2. **Agent App** - FastAPI app hosting a YAML-defined agent, with /invocations endpoint
-3. **UI Server** - Express/Next.js app that bridges browser and agent
-4. **Browser UI** - React chat interface with streaming text
+This guide shows you how to:
+1. Set up the chat UI template
+2. Connect it to your deployed agent
+3. Deploy the UI to Databricks Apps
+4. Test the complete integration
 
 **Architecture:**
 ```
-Browser → UI Server → Agent App → Backend API → LLM
-(React)   (Express)   (FastAPI)   (FastAPI)
+Browser (React) → UI Server (Express) → Agent App (FastAPI) → Backend API → LLM
+     ↓                    ↓                      ↓                  ↓
+  Port 3000           Port 3001            /invocations       /v1/responses
 ```
 
-See [ARCHITECTURE.md](ARCHITECTURE.md) for detailed data flow and [STREAMING_DEBUG_GUIDE.md](STREAMING_DEBUG_GUIDE.md) for troubleshooting.
+For detailed architecture, see [ARCHITECTURE.md](ARCHITECTURE.md). For a complete walkthrough, see [END_TO_END_EXAMPLE.md](END_TO_END_EXAMPLE.md).
 
 ---
 
@@ -384,72 +385,20 @@ data: [DONE]
 
 ## Part 3: Build the UI
 
-> **✅ Quick Start:** For a complete working setup using PR branches, see [WORKING_SETUP_GUIDE.md](WORKING_SETUP_GUIDE.md)
-
-### Step 3.1: Clone UI Template with OpenResponses Support
-
-**Option A: Use PR branch (recommended until PRs merge)**
+### Step 3.1: Clone UI Template
 
 ```bash
-# Clone the template with OpenResponses support
-git clone https://github.com/smurching/app-templates.git
-cd app-templates/e2e-chatbot-app-next
-git checkout feature/openresponses-support
-
-# Install dependencies
-npm install
-```
-
-**Option B: Use official template (after PRs merge)**
-
-```bash
+# Clone the Databricks chat UI template
 git clone https://github.com/databricks/app-templates.git
 cd app-templates/e2e-chatbot-app-next
-npm install
 ```
 
-**What's OpenResponses support?**
-
-OpenResponses support enables the chatbot UI to work with declarative agent apps. As of February 2026, this is implemented in two parts:
-
-1. **@databricks/ai-sdk-provider (v0.5.0+)** - Core OpenResponses streaming format support
-   - Zod schemas for event validation
-   - SSE stream parser and transformer
-   - AI SDK v3 LanguageModel implementation
-   - Used by all TypeScript/JavaScript consumers
-
-2. **e2e-chatbot-app-next template** - Uses the bridge's OpenResponses support
-   - Simplified provider configuration (no wrapper needed)
-   - `agent-client.ts` for direct agent invocations
-   - Proper UIMessageStream event handling
-
-**Related PRs:**
-- [databricks-ai-bridge #335: Add OpenResponses support](https://github.com/databricks/databricks-ai-bridge/pull/335) (adds provider support)
-- [app-templates #125: Use bridge OpenResponses](https://github.com/databricks/app-templates/pull/125) (uses new provider)
-
-**Local Development Setup:**
-
-For local testing with PR branches, use `npm link`:
-
-```bash
-# Set up databricks-ai-bridge
-cd ~/databricks-ai-bridge
-git checkout feature/add-openresponses-support
-cd integrations/ai-sdk-provider
-npm install && npm run build
-npm link
-
-# Link in chatbot app
-cd ~/app-templates/e2e-chatbot-app-next/packages/ai-sdk-providers
-npm install
-npm link @databricks/ai-sdk-provider
-
-# Install root dependencies
-cd ~/app-templates/e2e-chatbot-app-next
-npm install
-```
-
-**⚠️ Note:** Until the PRs merge, use the feature branches with npm link. Once merged, the official template will include OpenResponses support out-of-the-box.
+This template provides:
+- React-based chat interface
+- Real-time streaming responses
+- Conversation history
+- Databricks authentication
+- OpenResponses API compatibility
 
 ### Step 3.2: Install Dependencies
 
@@ -506,84 +455,16 @@ Open browser at `http://localhost:3000` and test the chat interface.
 
 ---
 
-## Part 4: Configure Integration
+## Part 4: Verify Integration
 
-### Step 4.1: Verify Server Integration
+The UI template comes pre-configured to work with your agent. The integration handles:
 
-The UI template includes agent integration in `server/src/routes/chat.ts`. The key integration logic:
+- **Authentication** - Databricks OAuth tokens
+- **Format conversion** - OpenResponses SSE → UI message stream
+- **Streaming** - Real-time text updates
+- **Error handling** - Connection issues and timeouts
 
-```typescript
-// Call agent app
-const agentResponse = await callAgentApp({
-  url: process.env.API_PROXY!,  // Agent /invocations endpoint
-  messages: uiMessages,
-  conversationId: id,
-  userId: session.user.email ?? session.user.id,
-  token: agentToken,
-});
-
-// Convert OpenResponses format to UIMessageStream format
-const textPartId = generateUUID();
-
-writer.write({
-  type: 'text-start',
-  id: textPartId,  // Required by Vercel AI SDK
-});
-
-for await (const textDelta of parseOpenResponsesStream(agentResponse)) {
-  writer.write({
-    type: 'text-delta',
-    id: textPartId,       // Same ID for all deltas
-    delta: textDelta,     // Use 'delta', not 'textDelta'
-  });
-}
-```
-
-**Critical event schema:**
-- `text-start` must have `id` field
-- `text-delta` must have `id` and `delta` fields
-- Use same `id` for all events in a response
-- Use `delta`, NOT `textDelta` (schema validation)
-
-### Step 4.2: Verify OpenResponses Parser
-
-Check `packages/core/src/agent-client.ts`:
-
-```typescript
-export async function* parseOpenResponsesStream(
-  response: Response
-): AsyncGenerator<string> {
-  // Parse SSE stream from agent app
-  const reader = response.body!.getReader();
-  const decoder = new TextDecoder();
-  let buffer = '';
-
-  while (true) {
-    const { done, value } = await reader.read();
-    if (done) break;
-
-    buffer += decoder.decode(value, { stream: true });
-    const lines = buffer.split('\n');
-    buffer = lines.pop() || '';
-
-    for (const line of lines) {
-      if (!line.startsWith('data: ')) continue;
-
-      const data = line.slice(6);
-      if (data === '[DONE]') return;
-
-      const event = JSON.parse(data);
-
-      // Extract text from OpenResponses format
-      if (event.type === 'response.output_text.delta' && event.delta) {
-        yield event.delta;  // Yield text chunks
-      } else if (event.type === 'response.error') {
-        throw new Error(event.error?.message || 'Agent error');
-      }
-    }
-  }
-}
-```
+No code changes needed—just configure environment variables in Step 3.3.
 
 ---
 
@@ -735,66 +616,53 @@ curl -N "https://chatbot-user-3217006663075879.aws.databricksapps.com/api/chat" 
 - ✅ No JavaScript errors in Console
 - ✅ Response completes with final text
 
-### Step 6.3: Common Issues
+### Step 6.3: Verify Logs (Optional)
 
-If streaming doesn't work:
+If you need to check application logs:
 
-**1. No text appears, only lifecycle events**
-- Check browser console for validation errors
-- Verify event schema has `id` and `delta` fields
-- See [STREAMING_DEBUG_GUIDE.md](STREAMING_DEBUG_GUIDE.md)
+```bash
+# View UI app logs
+databricks apps logs chatbot-user --follow
 
-**2. HTML login page instead of SSE**
-- Workspace mismatch: UI and agent must be in same workspace
-- Missing service principal permission (Step 5.4)
-- Check logs: `databricks apps logs chatbot-user --follow`
+# View agent app logs
+databricks apps logs dev-agent --follow
+```
 
-**3. 403 Forbidden errors**
-- Run Step 5.4 to grant permission
-- Verify agent app name matches
+### Step 6.4: Troubleshooting
 
-**4. Connection timeout or hangs**
-- Check agent app is running: `databricks apps get dev-agent`
-- Test agent directly (Part 2, Step 2.3)
-- Check backend is accessible from agent app
+If you encounter issues:
+
+- **No streaming responses:** Verify `DATABRICKS_CONFIG_PROFILE` matches agent workspace
+- **403 Forbidden:** Complete Step 5.4 to grant service principal permissions
+- **Connection timeouts:** Check agent app is running with `databricks apps get dev-agent`
+
+For detailed troubleshooting, see [STREAMING_DEBUG_GUIDE.md](STREAMING_DEBUG_GUIDE.md)
 
 ---
 
 ## Summary
 
-You've now built a complete streaming chatbot with:
+You've now deployed a complete streaming chat UI with:
 
-1. **✅ Backend** - FastAPI with OpenResponses API (`/v1/responses`)
-2. **✅ Agent App** - FastAPI hosting YAML-defined agent (`/invocations`)
-3. **✅ UI Server** - Express proxy converting formats
-4. **✅ Browser UI** - React chat with streaming text
-5. **✅ Deployed** - All components on Databricks Apps
-6. **✅ Authenticated** - Service principal permissions configured
-7. **✅ UI Template** - Using [OpenResponses PR branch](https://github.com/databricks/app-templates/compare/main...smurching:app-templates:feature/openresponses-support) for streaming support
+1. **✅ Backend** - FastAPI server with OpenResponses API
+2. **✅ Agent** - YAML-defined declarative agent
+3. **✅ Web UI** - React chat interface with real-time streaming
+4. **✅ Deployed** - All components on Databricks Apps
+5. **✅ Authenticated** - Service principal permissions configured
 
-**Architecture Flow:**
+**Complete Architecture:**
 ```
-Browser (localhost:3000 dev, HTTPS prod)
-  └─ POST /api/chat
-       ↓
-UI Server (Express on port 3001 dev, 8000 prod)
-  └─ Calls callAgentApp() with OAuth token
-       ↓
-Agent App (FastAPI, POST /invocations)
-  └─ DeclarativeAgent.from_yaml()
-  └─ AgentRunner.run_streaming()
-       ↓
-Backend (FastAPI, POST /v1/responses)
-  └─ LLM streaming
-       ↓
-OpenResponses SSE → UIMessageStream → Browser
+Browser → UI Server → Agent App → Backend API → LLM Serving
+(React)   (Express)   (FastAPI)   (FastAPI)      (Databricks)
+  ↓           ↓            ↓            ↓              ↓
+3000       3001      /invocations  /v1/responses  Model Endpoint
 ```
 
-**Key Differences from Generic Guides:**
-- ✅ Uses DeclarativeAgent SDK, NOT manual LangChain setup
-- ✅ Uses FastAPI, NOT Flask or MLflow wrappers
-- ✅ Deploys directly with uvicorn, NOT MLflow serving
-- ✅ YAML agent definitions, NOT Python agent classes
+**What makes this stack unique:**
+- ✅ **Declarative agents** - YAML configuration, not code
+- ✅ **Production-ready** - FastAPI, streaming, state management
+- ✅ **Databricks-native** - Seamless LLM and authentication integration
+- ✅ **Flexible deployment** - Local dev to production with same code
 
 ## Next Steps
 

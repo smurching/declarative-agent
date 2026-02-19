@@ -4,25 +4,25 @@ A production-ready agent backend built on Databricks Apps + Lakebase, implementi
 
 ## 📚 Documentation
 
-### Core Documentation
+### 🚀 Quick Start Guides
+- **[Getting Started](docs/GETTING_STARTED.md)** - Build your first declarative agent in 5 minutes
+- **[End-to-End Example](docs/END_TO_END_EXAMPLE.md)** - Complete customer support agent from scratch to production
+- **[UI Integration Guide](docs/UI_INTEGRATION_GUIDE.md)** - Deploy a web chat interface for your agent
+
+### 🏗️ Architecture & Design
 - **[Architecture Overview](docs/ARCHITECTURE.md)** - Complete system architecture with data flow diagrams, SSE streaming, authentication, and integration patterns
-- **[UI Integration Guide](docs/UI_INTEGRATION_GUIDE.md)** - Step-by-step guide to building and deploying a web UI with streaming responses
-- **[Streaming Debug Guide](docs/STREAMING_DEBUG_GUIDE.md)** - Debugging journey, common issues, and solutions for SSE streaming
-
-### Implementation Guides
-- **[Deployment Guide](DEPLOYMENT_GUIDE.md)** - Deploying agent backend to Databricks Apps
-- **[Implementation Summary](IMPLEMENTATION_SUMMARY.md)** - Complete implementation details and design decisions
 - **[Framework Spec](FRAMEWORK_SPEC.md)** - OpenResponses API specification and framework architecture
+- **[Implementation Summary](IMPLEMENTATION_SUMMARY.md)** - Complete implementation details and design decisions
 
-### Troubleshooting & Fixes
-- **[Streaming Fix Summary](STREAMING_FIX_SUMMARY.md)** - Agent backend streaming implementation (legacy, see docs/STREAMING_DEBUG_GUIDE.md for UI issues)
-- **[Permission Fix](PERMISSION_FIX.md)** - Databricks Apps permission configuration
-- **[Deployment Status](DEPLOYMENT_STATUS.md)** - Current deployment state and validation results
-- **[UI Deployment Status](UI_DEPLOYMENT_STATUS.md)** - UI app deployment details
-
-### SDK & Examples
+### 📖 Reference Documentation
 - **[SDK Documentation](sdk/README.md)** - Declarative Agent SDK API reference
 - **[Examples](examples/README.md)** - Sample agents and usage patterns
+- **[Deployment Guide](DEPLOYMENT_GUIDE.md)** - Deploying agent backend to Databricks Apps
+
+### 🔧 Troubleshooting
+- **[Streaming Debug Guide](docs/STREAMING_DEBUG_GUIDE.md)** - Debugging SSE streaming issues
+- **[Permission Fix](PERMISSION_FIX.md)** - Databricks Apps permission configuration
+- **[Deployment Status](DEPLOYMENT_STATUS.md)** - Current deployment state and validation results
 
 ## Features
 
@@ -56,6 +56,8 @@ POST /responses → Conversation Handler → Databricks LLM
 
 ## Quick Start
 
+**New to declarative agents?** Start with the **[Getting Started Guide](docs/GETTING_STARTED.md)** for a beginner-friendly introduction.
+
 ### Local Development (SQLite)
 
 **No database credentials needed!**
@@ -63,8 +65,6 @@ POST /responses → Conversation Handler → Databricks LLM
 1. **Install Dependencies**
    ```bash
    pip install -r requirements.txt
-   # or
-   uv sync
    ```
 
 2. **Configure Environment**
@@ -79,12 +79,14 @@ POST /responses → Conversation Handler → Databricks LLM
    uvicorn server.main:app --host 0.0.0.0 --port 8000 --reload
    ```
 
-   The database file will be created automatically at `./agent_backend.db`.
-
-4. **Run Tests**
+4. **Run Your First Agent**
    ```bash
-   DB_TYPE=sqlite pytest tests/test_api_acceptance.py -v
+   python examples/basic_usage.py
    ```
+
+**Next Steps:**
+- Follow the **[End-to-End Example](docs/END_TO_END_EXAMPLE.md)** to build a complete production agent
+- Deploy a **[Web Chat UI](docs/UI_INTEGRATION_GUIDE.md)** for your agent
 
 ### Production Deployment (PostgreSQL/Lakebase)
 
@@ -176,6 +178,8 @@ curl http://localhost:8000/v1/responses/resp_abc123
 
 Define and run AI agents using simple YAML configurations powered by the OpenResponses API backend.
 
+**👉 See the [Getting Started Guide](docs/GETTING_STARTED.md) for a comprehensive introduction.**
+
 ### Features
 
 - **Define agents via YAML** - No code required to configure agents
@@ -183,7 +187,7 @@ Define and run AI agents using simple YAML configurations powered by the OpenRes
 - **Conversation history** - Multi-turn conversations with context
 - **Production-ready** - Built on battle-tested OpenResponses API
 
-### Quick Start
+### Quick Example
 
 **1. Define an Agent (YAML)**
 
@@ -250,12 +254,14 @@ See the [`examples/`](./examples/) directory for complete examples:
 
 - **basic_usage.py** - Non-streaming, streaming, and background modes
 - **background_agent.py** - Long-running tasks with background execution
-- **agents/** - Example YAML agent definitions
+- **agents/** - Example YAML agent definitions (assistant, data analyst, code reviewer, etc.)
 
-### Documentation
+### Learn More
 
-- [SDK Documentation](./sdk/README.md) - Full API reference
-- [Examples Guide](./examples/README.md) - Running examples and creating custom agents
+- **[Getting Started Guide](docs/GETTING_STARTED.md)** - Beginner-friendly introduction
+- **[End-to-End Example](docs/END_TO_END_EXAMPLE.md)** - Build a complete agent from scratch
+- **[SDK Documentation](./sdk/README.md)** - Full API reference
+- **[Examples Guide](./examples/README.md)** - Running examples and creating custom agents
 
 ## Hosted Tools
 
