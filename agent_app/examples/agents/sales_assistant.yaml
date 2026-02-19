@@ -1,0 +1,135 @@
+# Sales Assistant Agent
+# Helps sales reps find customer data, analyze deals, and create follow-up tasks
+
+name: sales_assistant
+version: 1.0
+description: "Helps sales reps at Acme Corp find customer information, analyze revenue trends, and manage CRM tasks"
+
+# Model configuration
+model:
+  provider: databricks
+  name: databricks-claude-sonnet-4-5
+  temperature: 0.7
+  max_output_tokens: 4096
+
+# System prompt
+prompt:
+  system: |
+    You are a sales assistant at Acme Corp. You help sales reps with:
+    - Finding customer information and purchase history
+    - Analyzing revenue trends and forecasts
+    - Creating follow-up tasks in the CRM
+
+    Guidelines:
+    - Always cite your sources when referencing data (e.g., "According to the customer database...")
+    - Be concise and professional
+    - When analyzing data, explain your reasoning clearly
+    - If you need to create a CRM task, explain why and ask for confirmation first
+
+  user:
+    mode: append
+    prompt: "Remember: Always verify information before creating tasks."
+
+# Tools available to the agent
+tools:
+  # UC Table tool - Query customer data
+  - type: table
+    name: customer_data
+    description: |
+      Query customer profiles and purchase history.
+      Available fields: customer_id, name, email, industry, total_revenue, last_purchase_date, status
+    table_name: main.sales.customers
+    permission: on_behalf_of_user  # Respects user's UC permissions, RLS, column masking
+    approval_policy: always_allow  # Safe read operation
+
+  # Genie Space tool - Analyze revenue
+  - type: genie
+    name: revenue_analyst
+    description: "Analyze revenue trends, forecasts, and deal pipelines"
+    space_id: "01f0695490611f89bba0a496dbdd840c"
+    permission: on_behalf_of_user
+    approval_policy: always_allow
+
+  # UC Function tool - Create CRM tasks
+  - type: uc_function
+    name: create_crm_task
+    description: |
+      Create a follow-up task in the CRM.
+      Parameters: title (string), description (string), assignee (email), due_date (ISO date)
+    function_name: main.sales.create_crm_task
+    permission: on_behalf_of_user
+    approval_policy: always_ask  # Ask before creating tasks (state-changing operation)
+
+  # MCP Server tool - Salesforce integration
+  - type: mcp
+    name: salesforce_api
+    description: "Query and update Salesforce records (accounts, opportunities, contacts)"
+    connection_name: salesforce_prod  # UC connection with OAuth config
+    permission: on_behalf_of_user
+    approval_policy: always_ask  # Ask before updating Salesforce
+
+  # Web Search tool - Research companies
+  - type: web_search
+    name: company_research
+    description: "Search the web for company information, news, and industry trends"
+    approval_policy: always_allow
+
+# Agent behavior configuration
+behavior:
+  recursion_limit: 10  # Max 10 tool calls per conversation
+  parallel_tools: true  # Execute multiple tools in parallel when possible
+  streaming: true  # Stream responses to user in real-time
+  interrupt_on_tool_approval: true  # Pause execution when tool approval needed
+
+# Conversation settings
+conversation:
+  auto_compact: true  # Auto-compact when approaching context limit
+  compact_strategy: summarize  # Summarize older messages instead of truncating
+  memory:
+    short_term: true  # Keep conversation history (automatic)
+    long_term:
+      enabled: false  # Don't persist facts across conversations (Phase 5 feature)
+
+# Observability
+tracing:
+  enabled: true
+  destination:
+    type: table  # Log traces to UC table
+    name: main.sales.agent_traces
+  include_tool_inputs: true
+  include_tool_outputs: true
+  include_prompt: false  # Don't log system prompt (contains proprietary info)
+  redact_pii: true  # Automatically redact emails, SSNs, phone numbers
+
+feedback:
+  enabled: true
+  destination:
+    type: table
+    name: main.sales.agent_feedback
+
+# Governance
+governance:
+  # Cost limits
+  max_cost_per_session: 0.50  # Max $0.50 per conversation
+  max_cost_per_user_per_day: 5.00  # Max $5 per user per day
+
+  # Time limits
+  max_duration_seconds: 300  # Max 5 minutes per response
+
+  # Rate limits
+  rate_limit:
+    requests_per_minute: 60
+    requests_per_hour: 500
+
+  # Access control
+  allowed_principals:
+    - groups: ["sales_team", "sales_managers"]
+
+  denied_principals:
+    - users: ["former_employee@company.com"]
+
+  # Content safety
+  content_safety:
+    enabled: true
+    block_pii_in_traces: true
+    block_toxic_content: false  # Sales conversations may include negative feedback

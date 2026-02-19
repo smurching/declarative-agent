@@ -1,0 +1,19 @@
+[project]
+name = "data-analyst-agent"
+version = "0.1.0"
+description = "Data analyst agent app with /invocations endpoint"
+requires-python = ">=3.10"
+dependencies = [
+    "fastapi>=0.115.0",
+    "uvicorn[standard]>=0.32.0",
+    "databricks-sdk>=0.40.0",
+    "databricks-openai>=0.3.0",
+    "httpx>=0.27.2",
+    "pyyaml>=6.0",
+    "pydantic>=2.9.2",
+    "openai>=1.0.0",
+]
+
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"

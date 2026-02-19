@@ -1,0 +1,127 @@
+# HR Support Agent
+# Answers employee questions about benefits, PTO, and policies
+
+name: hr_support
+version: 1.0
+description: "HR support agent that helps employees with questions about benefits, PTO, policies, and more"
+
+# Model configuration
+model:
+  provider: databricks
+  name: databricks-gpt-5-2
+  temperature: 0.5  # Lower temperature for factual HR info
+  max_output_tokens: 2048
+
+# System prompt
+prompt:
+  system: |
+    You are an HR support agent for Acme Corp. You help employees with:
+    - Benefits questions (health insurance, 401k, stock options)
+    - PTO and leave policies
+    - Company policies and procedures
+    - Payroll and compensation questions
+
+    Guidelines:
+    - Be empathetic, professional, and helpful
+    - Respect employee privacy - only access their own data
+    - If you don't know the answer, direct them to hr@company.com or their HR business partner
+    - For sensitive topics (compensation, performance), suggest speaking with their manager
+    - Always cite company policies when explaining rules
+
+# Tools available to the agent
+tools:
+  # UC Table tool - Employee data (with RLS)
+  - type: table
+    name: employee_data
+    description: |
+      Query employee profile information.
+      Note: Row-level security is applied - users can only see their own data.
+      Fields: employee_id, name, department, hire_date, manager, location
+    table_name: main.hr.employees
+    permission: on_behalf_of_user  # RLS ensures user only sees their own data
+    approval_policy: always_allow
+
+  # UC Function tool - Calculate PTO balance
+  - type: uc_function
+    name: calculate_pto_balance
+    description: |
+      Calculate remaining PTO days for an employee.
+      Parameters: employee_id (string)
+      Returns: {accrued: number, used: number, remaining: number}
+    function_name: main.hr.calculate_pto
+    permission: on_behalf_of_user
+    approval_policy: always_allow
+
+  # Agent Endpoint tool - Policy search (Knowledge Agent)
+  - type: agent_endpoint
+    name: policy_search
+    description: "Search company policy documents, employee handbook, and benefits guides"
+    endpoint_name: hr_policy_knowledge_agent
+    permission: as_service_principal  # Policies are public, no need for user auth
+    approval_policy: always_allow
+
+  # UC Function tool - Submit PTO request
+  - type: uc_function
+    name: submit_pto_request
+    description: |
+      Submit a PTO request for approval.
+      Parameters: employee_id, start_date, end_date, pto_type ('vacation' | 'sick' | 'personal')
+    function_name: main.hr.submit_pto_request
+    permission: on_behalf_of_user
+    approval_policy: always_ask  # Confirm before submitting
+
+# Agent behavior
+behavior:
+  recursion_limit: 8
+  parallel_tools: true
+  streaming: true
+  interrupt_on_tool_approval: true
+
+# Conversation settings
+conversation:
+  auto_compact: true
+  compact_strategy: summarize
+  memory:
+    short_term: true
+    long_term:
+      enabled: false
+
+# Observability
+tracing:
+  enabled: true
+  destination:
+    type: table
+    name: main.hr.agent_traces
+  include_tool_inputs: true
+  include_tool_outputs: true
+  redact_pii: true  # Redact SSNs, salaries, etc.
+
+feedback:
+  enabled: true
+  destination:
+    type: table
+    name: main.hr.agent_feedback
+
+# Governance
+governance:
+  # Cost limits (HR agent should be cheap to run)
+  max_cost_per_session: 0.25
+  max_cost_per_user_per_day: 2.00
+
+  # Time limits
+  max_duration_seconds: 180  # 3 minutes max
+
+  # Rate limits (higher than sales - all employees can use)
+  rate_limit:
+    requests_per_minute: 120
+    requests_per_hour: 1000
+
+  # Access control (all employees)
+  allowed_principals:
+    - users  # All workspace users
+
+  # Content safety
+  content_safety:
+    enabled: true
+    block_pii_in_traces: true
+    block_toxic_content: true

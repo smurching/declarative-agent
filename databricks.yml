@@ -8,6 +8,9 @@ variables:
     default: "databricks-gpt-5-2"
   resource_name_suffix:
     default: "${bundle.target}"
+  backend_app_url:
+    description: "Backend app URL (set after backend deployment)"
+    default: ""
 
 resources:
   # Lakebase (Postgres) database instance
@@ -16,8 +19,9 @@ resources:
       name: ${var.database_instance_name}-${var.resource_name_suffix}
       capacity: CU_1
 
-  # Databricks App
+  # Databricks Apps
   apps:
+    # Backend app - provides /responses API
     agent_backend:
       name: "${bundle.target}-agent-backend"
       description: "Agent backend with OpenResponses API support"
@@ -35,6 +39,23 @@ resources:
             database_name: databricks_postgres
             instance_name: ${resources.database_instances.agent_db.name}
             permission: CAN_CONNECT_AND_CREATE
+
+    # Agent app - hosts data_analyst agent, calls backend
+    data_analyst_agent:
+      name: "${bundle.target}-data-analyst"
+      description: "Data analyst agent with SQL and Python tools"
+      source_code_path: ./agent_app
+      config:
+        command: ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000"]
+        env:
+          - name: BACKEND_APP_URL
+            value: "https://dev-agent-backend-3217006663075879.aws.databricksapps.com"
+          # ALLOWED_API_KEY removed - using Databricks OAuth permissions instead
+
+      # Grant UI app permission to call this agent
+      permissions:
+        - service_principal_name: "app-2sbfjd db-chatbot-dev-sid-murching"
+          level: CAN_USE
 
 targets:
   dev:

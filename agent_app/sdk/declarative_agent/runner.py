@@ -43,7 +43,7 @@ class AgentRunner:
 
                 w = WorkspaceClient(profile=workspace_profile) if workspace_profile else WorkspaceClient()
                 self.client = AsyncDatabricksOpenAI(
-                    base_url=agent.backend_url,
+                    base_url=f"{agent.backend_url}/v1",
                     workspace_client=w
                 )
             except ImportError:
@@ -184,9 +184,20 @@ class AgentRunner:
         # Make streaming HTTP request to backend
         url = f"{self.agent.backend_url}/v1/responses"
 
+        # Get authentication token for Databricks Apps
+        headers = {}
+        if "databricksapps.com" in self.agent.backend_url.lower():
+            try:
+                from databricks.sdk import WorkspaceClient
+                w = WorkspaceClient()
+                token = w.config.oauth_token().access_token
+                headers["Authorization"] = f"Bearer {token}"
+            except Exception as e:
+                logger.warning(f"Failed to get auth token: {e}")
+
         async with httpx.AsyncClient(timeout=300.0) as client:
             try:
-                async with client.stream("POST", url, json=request) as response:
+                async with client.stream("POST", url, json=request, headers=headers) as response:
                     response.raise_for_status()
 
                     # Parse SSE stream

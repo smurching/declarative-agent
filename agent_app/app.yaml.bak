@@ -1,0 +1,7 @@
+command: ["uvicorn", "agent_app.main:app", "--host", "0.0.0.0", "--port", "8000"]
+runtime: python3.12
+
+env:
+  # Backend app URL - will be set via DAB variable
+  - name: BACKEND_APP_URL
+    value: ${var.backend_app_url}

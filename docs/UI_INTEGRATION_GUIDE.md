@@ -1,366 +1,264 @@
-# Complete Guide: Building and Deploying a Declarative Agent with UI
+# UI Integration Guide: Building a Declarative Agent with Browser UI
 
-This guide walks through building a declarative agent from scratch and connecting it to a web UI with streaming responses.
+Complete step-by-step guide to building and deploying a Databricks declarative agent with streaming browser UI integration.
 
-## Table of Contents
+## Overview
 
-1. [Prerequisites](#prerequisites)
-2. [Part 1: Build the Declarative Agent](#part-1-build-the-declarative-agent)
-3. [Part 2: Deploy the Agent App](#part-2-deploy-the-agent-app)
-4. [Part 3: Build the UI](#part-3-build-the-ui)
-5. [Part 4: Configure Integration](#part-4-configure-integration)
-6. [Part 5: Deploy the UI](#part-5-deploy-the-ui)
-7. [Testing](#testing)
-8. [Troubleshooting](#troubleshooting)
+This guide walks through creating:
+1. **Backend** - FastAPI server with OpenResponses /v1/responses API
+2. **Agent App** - FastAPI app hosting a YAML-defined agent, with /invocations endpoint
+3. **UI Server** - Express/Next.js app that bridges browser and agent
+4. **Browser UI** - React chat interface with streaming text
 
-## Prerequisites
-
-### Required Tools
-- **Databricks CLI** (>= 0.210.0): `brew install databricks`
-- **Node.js** 20.x: `nvm install 20 && nvm use 20`
-- **Python** 3.10+
-- **jq**: `brew install jq`
-
-### Databricks Workspace
-- Access to a Databricks workspace
-- Permissions to create apps
-- Serving endpoint for LLM (or use Databricks Foundation Models)
-
-### Authentication
-```bash
-databricks auth login --host https://your-workspace.cloud.databricks.com
+**Architecture:**
+```
+Browser → UI Server → Agent App → Backend API → LLM
+(React)   (Express)   (FastAPI)   (FastAPI)
 ```
 
-Verify:
-```bash
-databricks auth profiles
-```
+See [ARCHITECTURE.md](ARCHITECTURE.md) for detailed data flow and [STREAMING_DEBUG_GUIDE.md](STREAMING_DEBUG_GUIDE.md) for troubleshooting.
 
 ---
 
 ## Part 1: Build the Declarative Agent
 
-### Step 1.1: Create Agent Project Structure
+### Step 1.1: Project Structure
 
-```bash
-mkdir my-agent
-cd my-agent
+Create the following directory structure:
 
-# Create directory structure
-mkdir -p agent_app server tests
+```
+my-agent/
+├── agent_app/
+│   ├── __init__.py
+│   ├── main.py                    # FastAPI app hosting the agent
+│   └── examples/agents/
+│       └── my_agent.yaml          # YAML agent definition
+├── server/
+│   ├── __init__.py
+│   ├── main.py                    # Backend FastAPI server
+│   ├── responses_handler.py       # OpenResponses streaming handler
+│   ├── config.py                  # Configuration
+│   ├── db/                        # Database layer
+│   └── llm/                       # LLM client
+├── sdk/
+│   └── declarative_agent.py       # DeclarativeAgent SDK
+├── databricks.yml                 # Asset bundle config
+├── requirements.txt
+└── .env
 ```
 
-### Step 1.2: Define Agent Configuration
+### Step 1.2: Define Your Agent (YAML)
 
-Create `agent_app/agent.yaml`:
+The DeclarativeAgent SDK lets you define agents declaratively via YAML - no manual LangChain setup needed!
+
+Create `agent_app/examples/agents/my_agent.yaml`:
 
 ```yaml
-agent_name: "my_agent"
+# My Agent Definition
+name: my_agent
+version: 1.0
 description: "A helpful AI assistant"
 
-system_prompt: |
-  You are a helpful AI assistant. Answer questions clearly and concisely.
+# Model configuration
+model: databricks-gpt-5-2
+temperature: 0.7
+max_output_tokens: 4096
 
-llm:
-  model: "databricks-claude-sonnet-4"  # Or your serving endpoint name
-  temperature: 0.7
-  max_tokens: 1000
+# System prompt
+prompt:
+  system: |
+    You are a helpful AI assistant. Provide clear, concise answers
+    and help users with their questions.
 
-# Optional: Add tools
+# Tools (optional - add as needed)
 tools: []
+  # Example: UC function tool
+  # - type: function
+  #   name: calculator
+  #   description: "Perform mathematical calculations"
+  #   function_name: main.tools.calculator
+  #   permission: on_behalf_of_user
+  #   approval_policy: always_allow
 
-# Optional: Add retrieval
-retrieval: null
+# Agent behavior
+behavior:
+  recursion_limit: 10
+  streaming: true
+  interrupt_on_tool_approval: false
+
+# Conversation settings
+conversation:
+  auto_compact: true
+  compact_strategy: summarize
 ```
 
-### Step 1.3: Create Agent Entry Point
+**For a comprehensive example with tools, tracing, and governance**, see [examples/agents/data_analyst.yaml](../examples/agents/data_analyst.yaml) which includes:
+- UC table tools for SQL queries
+- Code interpreter for Python analysis
+- Vector search for finding similar analyses
+- Tracing and feedback collection
+- Cost limits and rate limits
+- Content safety controls
+
+### Step 1.3: Create Agent App (FastAPI)
+
+The agent app hosts your YAML-defined agent and provides an `/invocations` endpoint that proxies to the backend.
 
 Create `agent_app/main.py`:
 
 ```python
+"""
+Agent app FastAPI server.
+
+Hosts a declarative agent defined in YAML and provides /invocations
+endpoint that proxies requests to the backend /v1/responses API.
+"""
 import os
+import json
 import logging
-from typing import Iterator, Any
-from mlflow.deployments import get_deploy_client
+from pathlib import Path
+from typing import Optional
+from fastapi import FastAPI, HTTPException, Depends, Header
+from fastapi.responses import StreamingResponse
+from pydantic import BaseModel
+
+# Import DeclarativeAgent SDK
+from sdk.declarative_agent import DeclarativeAgent, AgentRunner
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-# LangChain imports for agent logic
-from langchain_core.messages import HumanMessage, AIMessage
-from langchain_core.runnables import Runnable
+# Configuration
+AGENT_PATH = Path(__file__).parent / "examples/agents/my_agent.yaml"
+BACKEND_URL = os.getenv("BACKEND_APP_URL", "http://localhost:8000")
 
-def create_agent() -> Runnable:
-    """Create and configure the agent."""
-    from langchain_databricks import ChatDatabricks
+# Load agent from YAML
+agent = DeclarativeAgent.from_yaml(str(AGENT_PATH), backend_url=BACKEND_URL)
 
-    # Get LLM endpoint from config
-    endpoint = os.environ.get("LLM_ENDPOINT", "databricks-claude-sonnet-4")
+app = FastAPI(title="My Agent App")
 
-    # Create LLM client
-    llm = ChatDatabricks(
-        endpoint=endpoint,
-        temperature=0.7,
-        max_tokens=1000
-    )
 
-    # For simple agent, just return the LLM
-    # For complex agents, use LangGraph or other frameworks
-    return llm
+class InvocationsRequest(BaseModel):
+    """Request format for /invocations endpoint."""
+    input: list[dict]  # [{"role": "user", "content": "..."}]
+    stream: bool = True
 
-def chat(messages: list[dict[str, str]]) -> Iterator[str]:
+
+async def verify_databricks_auth(
+    authorization: Optional[str] = Header(None)
+) -> bool:
     """
-    Process a chat request and yield response chunks.
+    Verify Databricks authentication.
 
-    Args:
-        messages: List of {role, content} dicts
-
-    Yields:
-        Text chunks from the LLM
+    In production: validates OAuth token from Databricks Apps
+    In local dev: accepts any token for testing
     """
-    try:
-        agent = create_agent()
+    if not authorization:
+        raise HTTPException(status_code=401, detail="Missing authorization")
+    return True
 
-        # Convert messages to LangChain format
-        lc_messages = []
-        for msg in messages:
-            if msg["role"] == "user":
-                lc_messages.append(HumanMessage(content=msg["content"]))
-            elif msg["role"] == "assistant":
-                lc_messages.append(AIMessage(content=msg["content"]))
 
-        # Stream response
-        for chunk in agent.stream(lc_messages):
-            if hasattr(chunk, 'content') and chunk.content:
-                yield chunk.content
-
-    except Exception as e:
-        logger.error(f"Error in chat: {e}", exc_info=True)
-        raise
-
-# MLflow model wrapper (if deploying via MLflow)
-class AgentModel(mlflow.pyfunc.PythonModel):
-    def predict(self, context, model_input):
-        messages = model_input["messages"]
-        return list(chat(messages))
-```
-
-### Step 1.4: Create Backend Server
-
-Create `server/responses_handler.py`:
-
-```python
-"""
-OpenResponses format handler.
-
-Implements the Server-Sent Events (SSE) streaming format expected by
-the UI integration.
-"""
-import json
-import logging
-from typing import Iterator, Any, Dict
-from agent_app.main import chat
-
-logger = logging.getLogger(__name__)
-
-def generate_openresponses_stream(messages: list[dict]) -> Iterator[str]:
+@app.post("/invocations")
+async def invocations(
+    request: InvocationsRequest,
+    authorized: bool = Depends(verify_databricks_auth)
+):
     """
-    Generate OpenResponses SSE events from agent chat.
+    Main endpoint for agent requests.
 
-    Format:
-        data: {"type":"response.output_text.delta","delta":"text"}
+    Accepts OpenAI-style chat format:
+        {"input": [{"role": "user", "content": "..."}], "stream": true}
+
+    Returns OpenResponses SSE stream:
+        data: {"type":"response.output_text.delta","delta":"..."}
         data: {"type":"response.output_item.done","item":{...}}
         data: [DONE]
     """
-    accumulated_text = []
-
     try:
-        # Stream text deltas
-        for chunk in chat(messages):
-            if chunk:
-                accumulated_text.append(chunk)
-                event = {
-                    "type": "response.output_text.delta",
-                    "delta": chunk
-                }
-                yield f"data: {json.dumps(event)}\n\n"
+        # Extract user message and conversation history
+        user_message = None
+        conversation_id = None
 
-        # Send completion event
-        full_text = "".join(accumulated_text)
-        done_event = {
-            "type": "response.output_item.done",
-            "item": {
-                "role": "assistant",
-                "content": full_text
-            }
-        }
-        yield f"data: {json.dumps(done_event)}\n\n"
+        for msg in request.input:
+            if msg.get("role") == "user":
+                user_message = msg.get("content")
 
-        # Send terminator
-        yield "data: [DONE]\n\n"
+        if not user_message:
+            raise HTTPException(status_code=400, detail="No user message found")
+
+        # Generate a user_id (in production, extract from auth token)
+        user_id = 12345
+
+        # Run agent using DeclarativeAgent SDK
+        async with AgentRunner(agent, user_id=user_id) as runner:
+            if request.stream:
+                # Streaming mode - yield SSE events
+                async def stream_events():
+                    async for event in runner.run_streaming(
+                        message=user_message,
+                        conversation_id=conversation_id
+                    ):
+                        # Events are already in OpenResponses format
+                        yield f"data: {json.dumps(event)}\n\n"
+                    yield "data: [DONE]\n\n"
+
+                return StreamingResponse(
+                    stream_events(),
+                    media_type="text/event-stream",
+                    headers={
+                        "Cache-Control": "no-cache",
+                        "X-Accel-Buffering": "no"
+                    }
+                )
+            else:
+                # Non-streaming mode - return complete response
+                response = await runner.run(
+                    message=user_message,
+                    stream=False,
+                    conversation_id=conversation_id
+                )
+                return response
 
     except Exception as e:
-        logger.error(f"Error in stream: {e}", exc_info=True)
-        error_event = {
-            "type": "response.error",
-            "error": {
-                "type": "internal_error",
-                "message": str(e)
-            }
-        }
-        yield f"data: {json.dumps(error_event)}\n\n"
+        logger.error(f"Error in invocations: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
 
-def handle_responses_request(request_data: dict) -> Iterator[str]:
-    """
-    Main handler for /v1/responses endpoint.
 
-    Args:
-        request_data: {
-            "messages": [...],
-            "config": {...}
-        }
-
-    Returns:
-        Iterator of SSE formatted strings
-    """
-    messages = request_data.get("messages", [])
-
-    # Convert to simple format expected by agent
-    simple_messages = []
-    for msg in messages:
-        role = msg.get("role")
-        content = msg.get("content", "")
-
-        # Handle different content formats
-        if isinstance(content, list):
-            # Extract text from parts
-            text_parts = [
-                part.get("text", "")
-                for part in content
-                if part.get("type") == "text"
-            ]
-            content = " ".join(text_parts)
-
-        simple_messages.append({
-            "role": role,
-            "content": content
-        })
-
-    return generate_openresponses_stream(simple_messages)
-```
-
-Create `server/app.py`:
-
-```python
-"""
-Flask/FastAPI server for the agent backend.
-"""
-from flask import Flask, request, Response, stream_with_context
-from server.responses_handler import handle_responses_request
-import logging
-
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger(__name__)
-
-app = Flask(__name__)
-
-@app.route('/v1/responses', methods=['POST'])
-def responses():
-    """Handle OpenResponses streaming requests."""
-    try:
-        request_data = request.get_json()
-
-        def generate():
-            try:
-                for chunk in handle_responses_request(request_data):
-                    yield chunk
-            except Exception as e:
-                logger.error(f"Error in generate: {e}", exc_info=True)
-                raise
-
-        return Response(
-            stream_with_context(generate()),
-            content_type='text/event-stream',
-            headers={
-                'Cache-Control': 'no-cache',
-                'X-Accel-Buffering': 'no'
-            }
-        )
-    except Exception as e:
-        logger.error(f"Error in responses endpoint: {e}", exc_info=True)
-        return {"error": str(e)}, 500
-
-@app.route('/health', methods=['GET'])
-def health():
+@app.get("/health")
+async def health():
     """Health check endpoint."""
-    return {"status": "healthy"}
-
-if __name__ == '__main__':
-    app.run(host='0.0.0.0', port=8000)
+    return {"status": "healthy", "agent": agent.name}
 ```
 
-### Step 1.5: Create Requirements
+**Key points:**
+- Uses `DeclarativeAgent.from_yaml()` to load agent config
+- `AgentRunner` handles conversation state and streaming
+- No manual LangChain setup - SDK handles it all
+- `/invocations` endpoint proxies to backend `/v1/responses`
+- Returns OpenResponses SSE format expected by UI
+
+### Step 1.4: Create Requirements
 
 Create `requirements.txt`:
 
 ```
-# LangChain and agent dependencies
-langchain>=0.1.0
-langchain-core>=0.1.0
-langchain-databricks>=0.1.0
+# FastAPI and server
+fastapi>=0.104.0
+uvicorn[standard]>=0.24.0
 
-# MLflow for deployment
-mlflow>=2.10.0
+# Backend dependencies (if using shared backend)
+sqlalchemy>=2.0.0
+pydantic>=2.0.0
+httpx>=0.25.0
 
-# Server
-flask>=3.0.0
+# LLM integration
+openai>=1.0.0
 
 # Utilities
-pydantic>=2.0.0
 python-dotenv>=1.0.0
 ```
 
-### Step 1.6: Create Agent Wrapper
-
-Create `agent_app/mlflow_wrapper.py`:
-
-```python
-"""
-MLflow wrapper for deploying the agent.
-"""
-import mlflow
-from agent_app.main import chat
-
-class AgentWrapper(mlflow.pyfunc.PythonModel):
-    """
-    MLflow PyFunc wrapper for the agent.
-
-    Input format:
-        {
-            "input": [
-                {"role": "user", "content": "Hello"}
-            ],
-            "stream": true
-        }
-
-    Output:
-        Iterator of text chunks (if stream=true)
-        or full response (if stream=false)
-    """
-
-    def predict(self, context, model_input):
-        """Handle prediction requests."""
-        messages = model_input.get("input", [])
-        stream = model_input.get("stream", False)
-
-        if stream:
-            # Return generator for streaming
-            return chat(messages)
-        else:
-            # Collect all chunks
-            chunks = list(chat(messages))
-            return {"output": "".join(chunks)}
-```
+**Note:** The actual DeclarativeAgent SDK and backend code should be in your repo. See [sdk/README.md](../sdk/README.md) for SDK documentation.
 
 ---
 
@@ -368,85 +266,119 @@ class AgentWrapper(mlflow.pyfunc.PythonModel):
 
 ### Step 2.1: Create Databricks Asset Bundle
 
-Create `databricks.yml`:
+Create `databricks.yml` in the root of your project:
 
 ```yaml
 bundle:
-  name: my-agent
+  name: my-agent-project
 
 variables:
-  agent_name:
-    default: "my-agent-${workspace.current_user.short_name}"
+  serving_endpoint_name:
+    default: "databricks-gpt-5-2"
+  resource_name_suffix:
+    default: "${bundle.target}"
 
 resources:
   apps:
-    my_agent_app:
-      name: ${var.agent_name}
-      description: "My declarative agent"
+    # Backend app - provides /v1/responses API
+    agent_backend:
+      name: "${bundle.target}-backend"
+      description: "Agent backend with OpenResponses API"
+      source_code_path: ./
 
-      # Source code
-      src: .
-
-      # Resources needed
+      # Resources needed by backend
       resources:
-        - name: llm-endpoint
+        - name: serving-endpoint
           serving_endpoint:
-            name: "databricks-claude-sonnet-4"
+            name: ${var.serving_endpoint_name}
             permission: CAN_QUERY
 
-      # Runtime configuration
+    # Agent app - hosts the agent, calls backend
+    my_agent_app:
+      name: "${bundle.target}-agent"
+      description: "My declarative agent"
+      source_code_path: ./agent_app
+
+      # Start command for FastAPI
       config:
-        command: ["python", "-m", "server.app"]
+        command: ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000"]
         env:
-          - name: LLM_ENDPOINT
-            value: "databricks-claude-sonnet-4"
+          - name: BACKEND_APP_URL
+            value: "https://${bundle.target}-backend-3217006663075879.aws.databricksapps.com"
+
+      # Grant UI app permission (add after UI deployment)
+      permissions: []
+        # - service_principal_name: "app-xxxxx ui-app-name"
+        #   level: CAN_USE
 
 targets:
   dev:
     mode: development
-    workspace:
-      host: https://your-workspace.cloud.databricks.com
+    default: true
+    variables:
+      resource_name_suffix: "dev"
 ```
 
-### Step 2.2: Deploy Agent
+**Key configuration:**
+- `command: ["uvicorn", "main:app", ...]` - Runs FastAPI with uvicorn (NOT Flask, NOT MLflow)
+- `source_code_path: ./agent_app` - Agent app directory
+- `BACKEND_APP_URL` - Points to your backend /v1/responses endpoint
+- No MLflow wrappers needed - FastAPI deploys directly
+
+### Step 2.2: Deploy Both Apps
 
 ```bash
-# Validate configuration
+# From project root
+
+# 1. Validate configuration
 databricks bundle validate
 
-# Deploy
+# 2. Deploy both backend and agent app
 databricks bundle deploy -t dev
 
-# The output will show the app URL
-# Example: https://my-agent-user-1234567890.aws.databricksapps.com
+# 3. Check app status
+databricks apps list
+```
+
+**Expected output:**
+```
+✓ Deployed agent-backend: https://dev-backend-3217006663075879.aws.databricksapps.com
+✓ Deployed my-agent-app: https://dev-agent-3217006663075879.aws.databricksapps.com
 ```
 
 ### Step 2.3: Test Agent Directly
 
+Test the `/invocations` endpoint:
+
 ```bash
-# Get your auth token
+# Get auth token
 TOKEN=$(databricks auth token --host https://your-workspace.cloud.databricks.com --output json | jq -r '.access_token')
 
-# Test the agent
-curl -N "https://my-agent-user-1234567890.aws.databricksapps.com/invocations" \
+# Test agent app
+curl -N "https://dev-agent-3217006663075879.aws.databricksapps.com/invocations" \
   -H "Authorization: Bearer ${TOKEN}" \
   -H "Content-Type: application/json" \
   -d '{
     "input": [
-      {"role": "user", "content": "Hello"}
+      {"role": "user", "content": "Hello, how are you?"}
     ],
     "stream": true
   }'
 ```
 
-**Expected output:**
+**Expected output (OpenResponses SSE format):**
 ```
 data: {"type":"response.output_text.delta","delta":"Hello"}
 data: {"type":"response.output_text.delta","delta":"!"}
-data: {"type":"response.output_text.delta","delta":" How"}
+data: {"type":"response.output_text.delta","delta":" I'm"}
+data: {"type":"response.output_text.delta","delta":" an"}
+data: {"type":"response.output_text.delta","delta":" AI"}
 ...
+data: {"type":"response.output_item.done","item":{"role":"assistant","content":"Hello! I'm an AI assistant..."}}
 data: [DONE]
 ```
+
+✅ **If you see streaming `response.output_text.delta` events, your agent app is working correctly!**
 
 ---
 
@@ -456,8 +388,10 @@ data: [DONE]
 
 ```bash
 # Clone the e2e-chatbot-app template
-git clone https://github.com/databricks/e2e-chatbot-app-next.git my-ui
-cd my-ui
+git clone https://github.com/databricks/app-templates.git
+cd app-templates/e2e-chatbot-app-next
+
+# Or use your own Next.js/React app
 ```
 
 ### Step 3.2: Install Dependencies
@@ -468,21 +402,24 @@ npm install
 
 ### Step 3.3: Configure Environment
 
-Create `.env`:
+Create `.env` in the UI project:
 
 ```bash
 # Databricks Authentication
+# IMPORTANT: Must match agent app workspace!
 DATABRICKS_CONFIG_PROFILE=your-profile-name
 
 # Agent App URL (from Step 2.2)
-API_PROXY="https://my-agent-user-1234567890.aws.databricksapps.com/invocations"
+API_PROXY="https://dev-agent-3217006663075879.aws.databricksapps.com/invocations"
 
 # LLM Endpoint (for metadata only)
-DATABRICKS_SERVING_ENDPOINT="databricks-claude-sonnet-4"
+DATABRICKS_SERVING_ENDPOINT="databricks-gpt-5-2"
 
-# Optional: Enable logging
+# Optional: Enable debug logging
 LOG_SSE_EVENTS=true
 ```
+
+**⚠️ Critical:** The `DATABRICKS_CONFIG_PROFILE` must point to the **same workspace** as your agent app. Tokens are workspace-specific!
 
 ### Step 3.4: Test Locally
 
@@ -490,74 +427,77 @@ LOG_SSE_EVENTS=true
 # Start dev servers (client on 3000, server on 3001)
 npm run dev
 
-# In another terminal, test
+# In another terminal, run automated test
 npx tsx tests/test_ui_streaming_debug.ts
 ```
 
 **Expected output:**
 ```
+Testing UI server streaming...
 ✓ Got response, reading stream...
 [Event 1] start
 [Event 2] text-start
 [Event 3] text-delta
   └─ Text: "Hello"
+[Event 4] text-delta
+  └─ Text: "!"
 ...
 ✅ SUCCESS: Received streaming text content!
 ```
+
+Open browser at `http://localhost:3000` and test the chat interface.
 
 ---
 
 ## Part 4: Configure Integration
 
-### Step 4.1: Update Server to Call Agent
+### Step 4.1: Verify Server Integration
 
-The UI template already includes agent integration in `server/src/routes/chat.ts`. Verify it's configured:
+The UI template includes agent integration in `server/src/routes/chat.ts`. The key integration logic:
 
 ```typescript
-// In chat.ts
-if (isAgentApp) {
-  // Direct agent app integration
-  const agentToken = await getDatabricksToken();
+// Call agent app
+const agentResponse = await callAgentApp({
+  url: process.env.API_PROXY!,  // Agent /invocations endpoint
+  messages: uiMessages,
+  conversationId: id,
+  userId: session.user.email ?? session.user.id,
+  token: agentToken,
+});
 
-  const agentResponse = await callAgentApp({
-    url: process.env.API_PROXY!,
-    messages: uiMessages,
-    conversationId: id,
-    userId: session.user.email ?? session.user.id,
-    token: agentToken,
-  });
+// Convert OpenResponses format to UIMessageStream format
+const textPartId = generateUUID();
 
-  // Parse and stream to browser
-  const textPartId = generateUUID();
+writer.write({
+  type: 'text-start',
+  id: textPartId,  // Required by Vercel AI SDK
+});
 
+for await (const textDelta of parseOpenResponsesStream(agentResponse)) {
   writer.write({
-    type: 'text-start',
-    id: textPartId,
+    type: 'text-delta',
+    id: textPartId,       // Same ID for all deltas
+    delta: textDelta,     // Use 'delta', not 'textDelta'
   });
-
-  for await (const textDelta of parseOpenResponsesStream(agentResponse)) {
-    writer.write({
-      type: 'text-delta',
-      id: textPartId,
-      delta: textDelta,
-    });
-  }
 }
 ```
 
-### Step 4.2: Verify Agent Client
+**Critical event schema:**
+- `text-start` must have `id` field
+- `text-delta` must have `id` and `delta` fields
+- Use same `id` for all events in a response
+- Use `delta`, NOT `textDelta` (schema validation)
 
-Check `packages/core/src/agent-client.ts` has proper parsing:
+### Step 4.2: Verify OpenResponses Parser
+
+Check `packages/core/src/agent-client.ts`:
 
 ```typescript
 export async function* parseOpenResponsesStream(
   response: Response
 ): AsyncGenerator<string> {
-  if (!response.body) {
-    throw new Error('Response has no body');
-  }
-
-  const reader = response.body.getReader();
+  // Parse SSE stream from agent app
+  const reader = response.body!.getReader();
   const decoder = new TextDecoder();
   let buffer = '';
 
@@ -575,17 +515,13 @@ export async function* parseOpenResponsesStream(
       const data = line.slice(6);
       if (data === '[DONE]') return;
 
-      try {
-        const event = JSON.parse(data);
+      const event = JSON.parse(data);
 
-        // Extract text from OpenResponses format
-        if (event.type === 'response.output_text.delta' && event.delta) {
-          yield event.delta;
-        } else if (event.type === 'response.error') {
-          throw new Error(event.error?.message || 'Agent app error');
-        }
-      } catch (e) {
-        if (!(e instanceof SyntaxError)) throw e;
+      // Extract text from OpenResponses format
+      if (event.type === 'response.output_text.delta' && event.delta) {
+        yield event.delta;  // Yield text chunks
+      } else if (event.type === 'response.error') {
+        throw new Error(event.error?.message || 'Agent error');
       }
     }
   }
@@ -598,7 +534,7 @@ export async function* parseOpenResponsesStream(
 
 ### Step 5.1: Configure Databricks Bundle
 
-Update `databricks.yml`:
+In UI project, create/update `databricks.yml`:
 
 ```yaml
 bundle:
@@ -606,30 +542,22 @@ bundle:
 
 variables:
   app_name:
-    default: "my-chatbot-${workspace.current_user.short_name}"
-
+    default: "chatbot-${workspace.current_user.short_name}"
   agent_url:
-    default: "https://my-agent-user-1234567890.aws.databricksapps.com/invocations"
+    default: "https://dev-agent-3217006663075879.aws.databricksapps.com/invocations"
 
 resources:
   apps:
     chatbot_ui:
       name: ${var.app_name}
       description: "Chat UI for my agent"
+      source_code_path: .
 
-      src: .
-
-      # Grant UI app permission to call agent app
+      # Grant permission to agent app
       resources:
-        - name: agent
-          serving_endpoint:
-            name: databricks-claude-sonnet-4  # For metadata
-            permission: CAN_QUERY
-
-        # Important: Grant permission to agent app
         - name: agent-app
           app:
-            name: my-agent-user  # Your agent app name
+            name: dev-agent  # Your agent app name
             permission: CAN_USE
 
 targets:
@@ -649,7 +577,7 @@ runtime: nodejs20
 
 env:
   - name: DATABRICKS_SERVING_ENDPOINT
-    value: "databricks-claude-sonnet-4"
+    value: "databricks-gpt-5-2"
   - name: API_PROXY
     value: "${var.agent_url}"
   - name: LOG_SSE_EVENTS
@@ -665,28 +593,31 @@ npm run build
 # Deploy
 databricks bundle deploy -t dev
 
-# Start the app
+# Start the app (if not auto-started)
 databricks bundle run chatbot_ui -t dev
 ```
 
 **Output:**
 ```
 ✓ App started successfully
-You can access the app at https://my-chatbot-user-3217006663075879.aws.databricksapps.com
+URL: https://chatbot-user-3217006663075879.aws.databricksapps.com
 ```
 
 ### Step 5.4: Grant Service Principal Permission
 
+The UI app's service principal needs permission to call the agent app:
+
 ```bash
 # Get UI app's service principal
-UI_APP_SP=$(databricks apps get my-chatbot-user --output json | jq -r '.service_principal_client_id')
+UI_APP_SP=$(databricks apps get chatbot-user --output json | jq -r '.service_principal_client_id')
 
 # Get agent app name
-AGENT_APP="my-agent-user"
+AGENT_APP="dev-agent"
 
-# Grant permission
+# Get auth token
 TOKEN=$(databricks auth token --output json | jq -r '.access_token')
 
+# Grant CAN_USE permission
 curl -X PUT "https://your-workspace.cloud.databricks.com/api/2.0/permissions/apps/${AGENT_APP}" \
   -H "Authorization: Bearer ${TOKEN}" \
   -H "Content-Type: application/json" \
@@ -695,32 +626,29 @@ curl -X PUT "https://your-workspace.cloud.databricks.com/api/2.0/permissions/app
       {
         \"service_principal_name\": \"${UI_APP_SP}\",
         \"permission_level\": \"CAN_USE\"
-      },
-      {
-        \"user_name\": \"your.email@company.com\",
-        \"permission_level\": \"CAN_MANAGE\"
       }
     ]
   }"
 ```
 
+**Why this is needed:**
+- UI app runs with its own service principal
+- Agent app requires authentication
+- Service principal needs explicit `CAN_USE` permission
+- Without this, you'll get 403 errors or HTML login pages
+
 ---
 
-## Testing
+## Part 6: Testing and Verification
 
-### Test 1: Browser UI
-
-1. Open: `https://my-chatbot-user-3217006663075879.aws.databricksapps.com`
-2. Log in with your Databricks credentials
-3. Send message: "Hello"
-4. Verify text streams in character-by-character
-
-### Test 2: curl API Endpoint
+### Step 6.1: Test Deployed UI
 
 ```bash
-TOKEN=$(databricks auth token --output json | jq -r '.access_token')
+# Get auth token
+TOKEN=$(databricks auth token --host https://your-workspace.cloud.databricks.com --output json | jq -r '.access_token')
 
-curl -N "https://my-chatbot-user-3217006663075879.aws.databricksapps.com/api/chat" \
+# Test /api/chat endpoint
+curl -N "https://chatbot-user-3217006663075879.aws.databricksapps.com/api/chat" \
   -H "Authorization: Bearer ${TOKEN}" \
   -H "Content-Type: application/json" \
   -d '{
@@ -735,184 +663,93 @@ curl -N "https://my-chatbot-user-3217006663075879.aws.databricksapps.com/api/cha
   }'
 ```
 
-**Expected:**
-```
-data: {"type":"text-start","id":"..."}
-data: {"type":"text-delta","id":"...","delta":"Hello"}
-...
-data: [DONE]
-```
+**Expected:** SSE stream with `text-delta` events
 
-### Test 3: Check Logs
+### Step 6.2: Test in Browser
 
-```bash
-# Agent app logs
-databricks apps logs my-agent-user --follow
+1. Open https://chatbot-user-3217006663075879.aws.databricksapps.com
+2. Send message: "What is 2+2?"
+3. Verify text appears **character-by-character** (streaming)
+4. Check browser DevTools → Network → Look for SSE events
 
-# UI app logs
-databricks apps logs my-chatbot-user --follow
-```
+**Success criteria:**
+- ✅ Text streams incrementally (not all at once)
+- ✅ Multiple `text-delta` events in Network tab
+- ✅ No JavaScript errors in Console
+- ✅ Response completes with final text
 
----
+### Step 6.3: Common Issues
 
-## Troubleshooting
+If streaming doesn't work:
 
-### Issue: "Received HTML login page"
+**1. No text appears, only lifecycle events**
+- Check browser console for validation errors
+- Verify event schema has `id` and `delta` fields
+- See [STREAMING_DEBUG_GUIDE.md](STREAMING_DEBUG_GUIDE.md)
 
-**Cause:** Authentication failure
+**2. HTML login page instead of SSE**
+- Workspace mismatch: UI and agent must be in same workspace
+- Missing service principal permission (Step 5.4)
+- Check logs: `databricks apps logs chatbot-user --follow`
 
-**Fix:**
-1. Check workspace matches: `.env` profile vs agent URL
-2. Verify service principal permission
-3. Check token expiry
+**3. 403 Forbidden errors**
+- Run Step 5.4 to grant permission
+- Verify agent app name matches
 
-```bash
-# Verify profile
-databricks auth profiles
-
-# Test token
-databricks auth token --output json
-```
-
-### Issue: "Type validation failed: unrecognized keys"
-
-**Cause:** Wrong event field names
-
-**Fix:** In `chat.ts`, use `delta` not `textDelta`:
-```typescript
-writer.write({
-  type: 'text-delta',
-  id: textPartId,
-  delta: textDelta,  // ← Correct field name
-});
-```
-
-### Issue: "Cannot set headers after they are sent"
-
-**Cause:** Manually setting headers before AI SDK
-
-**Fix:** Remove any manual `res.setHeader()` calls before `pipeUIMessageStreamToResponse()`
-
-### Issue: Browser shows lifecycle events but no text
-
-**Cause:** JavaScript validation errors
-
-**Fix:**
-1. Check browser console for errors
-2. Hard refresh (CMD+SHIFT+R)
-3. Verify `text-start` has `id` field
-4. Verify `text-delta` events have matching `id`
-
-### Issue: "Invalid UUID" error
-
-**Cause:** UUID doesn't match v4 format
-
-**Fix:** Use proper v4 UUIDs with correct variant bits:
-```bash
-# Valid format: xxxxxxxx-xxxx-4xxx-[89ab]xxx-xxxxxxxxxxxx
-# Third segment starts with 4 (version)
-# Fourth segment starts with 8, 9, a, or b (variant)
-```
-
----
-
-## Best Practices
-
-### 1. Logging
-
-Add comprehensive logging:
-
-```python
-# Agent
-logger.info(f"Processing message: {message[:50]}...")
-logger.info(f"Generated response chunk: {chunk}")
-```
-
-```typescript
-// UI Server
-console.log('[AgentClient] Event:', event.type);
-console.log('[Chat] Text chunk:', textDelta);
-```
-
-### 2. Error Handling
-
-Always catch and report errors:
-
-```typescript
-try {
-  for await (const textDelta of parseOpenResponsesStream(agentResponse)) {
-    writer.write({ type: 'text-delta', id: textPartId, delta: textDelta });
-  }
-} catch (error) {
-  console.error('[Chat] Streaming error:', error);
-  writer.write({ type: 'data-error', data: error.message });
-}
-```
-
-### 3. Testing
-
-Test at each integration point:
-
-```bash
-# 1. Test agent backend directly
-curl http://localhost:8000/v1/responses ...
-
-# 2. Test agent app endpoint
-curl https://my-agent.../invocations ...
-
-# 3. Test UI server locally
-npm run dev
-
-# 4. Test deployed UI
-curl https://my-chatbot.../api/chat ...
-```
-
-### 4. Monitoring
-
-Monitor in production:
-
-```bash
-# Check app status
-databricks apps get my-chatbot-user
-
-# Stream logs
-databricks apps logs my-chatbot-user --follow
-
-# Check metrics (if configured)
-databricks apps metrics my-chatbot-user
-```
-
-### 5. Security
-
-- Use service principals for app-to-app auth
-- Grant minimal permissions (CAN_USE, not CAN_MANAGE)
-- Don't log sensitive data (tokens, PII)
-- Validate all user input with Zod schemas
+**4. Connection timeout or hangs**
+- Check agent app is running: `databricks apps get dev-agent`
+- Test agent directly (Part 2, Step 2.3)
+- Check backend is accessible from agent app
 
 ---
 
 ## Summary
 
-You've now built and deployed a complete streaming chatbot system:
+You've now built a complete streaming chatbot with:
 
-1. ✅ Created a declarative agent with OpenResponses streaming
-2. ✅ Deployed agent as Databricks App
-3. ✅ Built web UI with React + Express
-4. ✅ Integrated UI with agent via SSE streaming
-5. ✅ Deployed UI as Databricks App
-6. ✅ Configured authentication and permissions
-7. ✅ Tested end-to-end with curl and browser
+1. **✅ Backend** - FastAPI with OpenResponses API (`/v1/responses`)
+2. **✅ Agent App** - FastAPI hosting YAML-defined agent (`/invocations`)
+3. **✅ UI Server** - Express proxy converting formats
+4. **✅ Browser UI** - React chat with streaming text
+5. **✅ Deployed** - All components on Databricks Apps
+6. **✅ Authenticated** - Service principal permissions configured
 
-**Architecture:**
+**Architecture Flow:**
 ```
-Browser → UI App → Agent App → LLM
-  (React)  (Express)  (Python)  (Databricks)
+Browser (localhost:3000 dev, HTTPS prod)
+  └─ POST /api/chat
+       ↓
+UI Server (Express on port 3001 dev, 8000 prod)
+  └─ Calls callAgentApp() with OAuth token
+       ↓
+Agent App (FastAPI, POST /invocations)
+  └─ DeclarativeAgent.from_yaml()
+  └─ AgentRunner.run_streaming()
+       ↓
+Backend (FastAPI, POST /v1/responses)
+  └─ LLM streaming
+       ↓
+OpenResponses SSE → UIMessageStream → Browser
 ```
 
-**Key Technologies:**
-- Databricks Apps (deployment platform)
-- OpenResponses (streaming format)
-- Vercel AI SDK (React streaming)
-- Server-Sent Events (transport)
+**Key Differences from Generic Guides:**
+- ✅ Uses DeclarativeAgent SDK, NOT manual LangChain setup
+- ✅ Uses FastAPI, NOT Flask or MLflow wrappers
+- ✅ Deploys directly with uvicorn, NOT MLflow serving
+- ✅ YAML agent definitions, NOT Python agent classes
 
-For more details, see [ARCHITECTURE.md](./ARCHITECTURE.md).
+## Next Steps
+
+- **Add tools** to your YAML agent (UC functions, code interpreter, vector search)
+- **Enable tracing** for observability (see data_analyst.yaml example)
+- **Add governance** (cost limits, rate limits, content safety)
+- **Customize UI** (branding, layouts, custom tool renderers)
+- **Production hardening** (error handling, retries, monitoring)
+
+## References
+
+- [Architecture Guide](ARCHITECTURE.md) - Complete system design
+- [Streaming Debug Guide](STREAMING_DEBUG_GUIDE.md) - Troubleshooting SSE issues
+- [Deployment Guide](../DEPLOYMENT_GUIDE.md) - Backend deployment details
+- [SDK Documentation](../sdk/README.md) - DeclarativeAgent SDK API reference
+- [Examples](../examples/) - Sample agents and usage patterns

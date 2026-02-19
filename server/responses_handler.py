@@ -265,9 +265,8 @@ async def handle_responses(request: ResponsesRequest):
             # Create messages with history for LLM (don't modify input_messages)
             messages_with_history = history + input_messages
         else:
-            # No history for new conversations
+            # No history for new conversations - create new conversation
             messages_with_history = input_messages
-        else:
             conv = await create_conversation(
                 session,
                 databricks_opts.user_id,

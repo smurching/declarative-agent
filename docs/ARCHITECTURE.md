@@ -44,7 +44,7 @@ This document describes the architecture for integrating a Databricks declarativ
                              │ {input: [...], stream: true}
                              ▼
 ┌─────────────────────────────────────────────────────────────────────────┐
-│                      Agent App (Python/MLflow)                          │
+│                      Agent App (Python/FastAPI)                         │
 │  ┌──────────────────────────────────────────────────────────────────┐  │
 │  │  Main Handler (declarative-agent/agent_app/main.py)             │  │
 │  │    1. Receives request                                          │  │

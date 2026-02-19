@@ -1,0 +1,160 @@
+# Code Review Agent
+# Reviews code changes and provides feedback on correctness, performance, and security
+
+name: code_reviewer
+version: 1.0
+description: "AI code reviewer that analyzes PRs for correctness, performance, security, and best practices"
+
+# Model configuration
+model:
+  provider: databricks
+  name: databricks-claude-sonnet-4-5
+  temperature: 0.3  # Lower temperature for more consistent, focused reviews
+  max_output_tokens: 8192  # Large context for reviewing big diffs
+
+# System prompt
+prompt:
+  system: |
+    You are an expert code reviewer. Review code changes for:
+
+    1. **Correctness**
+       - Logic errors and bugs
+       - Edge cases not handled
+       - Incorrect assumptions
+
+    2. **Performance**
+       - Inefficient algorithms or data structures
+       - Unnecessary loops or operations
+       - Database query optimization
+
+    3. **Security**
+       - SQL injection vulnerabilities
+       - XSS and CSRF risks
+       - Hardcoded secrets or credentials
+       - Insufficient input validation
+
+    4. **Best Practices**
+       - Code readability and maintainability
+       - Proper error handling
+       - Test coverage
+       - Documentation
+
+    5. **Style**
+       - Naming conventions
+       - Code organization
+       - Comments and documentation
+
+    Guidelines:
+    - Be constructive and specific
+    - Explain WHY something is a problem, not just WHAT
+    - Suggest concrete improvements with code examples
+    - Prioritize issues (critical, major, minor)
+    - Acknowledge good code when you see it
+
+    Format your review as:
+    - Overall summary
+    - File-by-file detailed feedback
+    - Suggested changes (as code snippets)
+
+# Tools available to the agent
+tools:
+  # MCP Server tool - GitHub API
+  - type: mcp
+    name: github
+    description: |
+      Access GitHub PRs and code.
+      Available operations:
+      - get_pr_files: Get list of changed files in PR
+      - get_file_content: Read file content
+      - add_pr_comment: Add review comment
+      - get_pr_checks: Get CI/CD check results
+    connection_name: github_prod
+    permission: on_behalf_of_user
+    approval_policy: always_ask  # Ask before commenting on PR
+
+  # Code Interpreter tool - Static analysis
+  - type: code_interpreter
+    name: static_analysis
+    description: |
+      Run static analysis tools on code.
+      Available tools:
+      - pylint, mypy, black (Python)
+      - eslint, prettier (JavaScript/TypeScript)
+      - rubocop (Ruby)
+      - clippy (Rust)
+    approval_policy: always_allow
+
+  # UC Function tool - Search codebase
+  - type: uc_function
+    name: search_codebase
+    description: |
+      Search the codebase for similar patterns, function definitions, or usage examples.
+      Useful for suggesting improvements based on existing code.
+    function_name: main.eng.search_code
+    permission: as_service_principal
+    approval_policy: always_allow
+
+  # Vector Search tool - Find similar PR reviews
+  - type: vector_search
+    name: past_reviews
+    description: "Find similar code reviews to learn from past feedback patterns"
+    index_name: main.eng.code_review_history_index
+    permission: as_service_principal
+    approval_policy: always_allow
+
+# Agent behavior
+behavior:
+  recursion_limit: 20  # Code review may require many steps
+  parallel_tools: true  # Can analyze multiple files in parallel
+  streaming: true
+  interrupt_on_tool_approval: true
+
+# Conversation settings
+conversation:
+  auto_compact: true
+  compact_strategy: summarize
+  memory:
+    short_term: true
+    long_term:
+      enabled: false
+
+# Observability
+tracing:
+  enabled: true
+  destination:
+    type: table
+    name: main.eng.code_review_traces
+  include_tool_inputs: true
+  include_tool_outputs: true
+  include_prompt: false  # Code review prompts may contain proprietary coding standards
+  redact_pii: false  # Code reviews don't typically contain PII
+
+feedback:
+  enabled: true
+  destination:
+    type: table
+    name: main.eng.code_review_feedback
+
+# Governance
+governance:
+  # Cost limits (code reviews can be expensive)
+  max_cost_per_session: 2.00  # Large PRs may cost more
+  max_cost_per_user_per_day: 20.00
+
+  # Time limits
+  max_duration_seconds: 900  # 15 minutes for large PRs
+
+  # Rate limits
+  rate_limit:
+    requests_per_minute: 30
+    requests_per_hour: 200
+
+  # Access control
+  allowed_principals:
+    - groups: ["eng_team", "code_reviewers"]
+
+  # Content safety
+  content_safety:
+    enabled: false  # Code may contain words that look like profanity (e.g., "kill")
+    block_pii_in_traces: false
+    block_toxic_content: false
