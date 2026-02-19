@@ -2,6 +2,28 @@
 
 A production-ready agent backend built on Databricks Apps + Lakebase, implementing an OpenResponses-compatible API for conversation management and LLM interaction. Supports both **SQLite** (local development) and **PostgreSQL/Lakebase** (production).
 
+## 📚 Documentation
+
+### Core Documentation
+- **[Architecture Overview](docs/ARCHITECTURE.md)** - Complete system architecture with data flow diagrams, SSE streaming, authentication, and integration patterns
+- **[UI Integration Guide](docs/UI_INTEGRATION_GUIDE.md)** - Step-by-step guide to building and deploying a web UI with streaming responses
+- **[Streaming Debug Guide](docs/STREAMING_DEBUG_GUIDE.md)** - Debugging journey, common issues, and solutions for SSE streaming
+
+### Implementation Guides
+- **[Deployment Guide](DEPLOYMENT_GUIDE.md)** - Deploying agent backend to Databricks Apps
+- **[Implementation Summary](IMPLEMENTATION_SUMMARY.md)** - Complete implementation details and design decisions
+- **[Framework Spec](FRAMEWORK_SPEC.md)** - OpenResponses API specification and framework architecture
+
+### Troubleshooting & Fixes
+- **[Streaming Fix Summary](STREAMING_FIX_SUMMARY.md)** - Agent backend streaming implementation (legacy, see docs/STREAMING_DEBUG_GUIDE.md for UI issues)
+- **[Permission Fix](PERMISSION_FIX.md)** - Databricks Apps permission configuration
+- **[Deployment Status](DEPLOYMENT_STATUS.md)** - Current deployment state and validation results
+- **[UI Deployment Status](UI_DEPLOYMENT_STATUS.md)** - UI app deployment details
+
+### SDK & Examples
+- **[SDK Documentation](sdk/README.md)** - Declarative Agent SDK API reference
+- **[Examples](examples/README.md)** - Sample agents and usage patterns
+
 ## Features
 
 - **OpenResponses-compatible /responses API** - Supports streaming, non-streaming, and background modes
