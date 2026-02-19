@@ -26,7 +26,18 @@ def check_backend_health(backend_url: str, timeout: float = 2.0) -> bool:
         True if backend is healthy, False otherwise
     """
     try:
-        response = httpx.get(f"{backend_url}/health", timeout=timeout)
+        headers = {}
+        # If running in Databricks Apps context, add authentication
+        if os.getenv("DATABRICKS_HOST"):
+            try:
+                from databricks.sdk import WorkspaceClient
+                w = WorkspaceClient()
+                token = w.config.authenticate()
+                headers["Authorization"] = f"Bearer {token}"
+            except Exception:
+                pass  # Fall back to no auth if SDK not available
+
+        response = httpx.get(f"{backend_url}/health", timeout=timeout, headers=headers, follow_redirects=True)
         return response.status_code == 200
     except Exception:
         return False
