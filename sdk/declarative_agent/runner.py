@@ -196,6 +196,10 @@ class AgentRunner:
                 client_id = os.getenv("DATABRICKS_CLIENT_ID")
                 client_secret = os.getenv("DATABRICKS_CLIENT_SECRET")
 
+                # Add https:// if not present
+                if not host.startswith(('http://', 'https://')):
+                    host = f"https://{host}"
+
                 token_url = f"{host}/oidc/v1/token"
                 token_response = auth_httpx.post(
                     token_url,
