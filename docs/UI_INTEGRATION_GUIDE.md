@@ -384,15 +384,38 @@ data: [DONE]
 
 ## Part 3: Build the UI
 
-### Step 3.1: Clone UI Template
+### Step 3.1: Clone UI Template with OpenResponses Support
+
+**Option A: Use PR branch (recommended until PR merges)**
 
 ```bash
-# Clone the e2e-chatbot-app template
+# Clone the template with OpenResponses support
+git clone https://github.com/smurching/app-templates.git
+cd app-templates/e2e-chatbot-app-next
+git checkout feature/openresponses-support
+
+# Install dependencies
+npm install
+```
+
+**Option B: Use official template (after PR merges)**
+
+```bash
 git clone https://github.com/databricks/app-templates.git
 cd app-templates/e2e-chatbot-app-next
-
-# Or use your own Next.js/React app
+npm install
 ```
+
+**What's OpenResponses support?**
+
+The e2e-chatbot-app-next template needs OpenResponses format support to work with declarative agents. This includes:
+- `agent-client.ts` module for calling agent `/invocations` endpoints
+- `parseOpenResponsesStream()` for parsing SSE events
+- Proper UIMessageStream event schema (text-start, text-delta with IDs)
+
+**PR:** [Add OpenResponses format streaming support](https://github.com/databricks/app-templates/compare/main...smurching:app-templates:feature/openresponses-support) (pending merge)
+
+**⚠️ Note:** Until the PR merges, use the feature branch. Once merged, the official template will include OpenResponses support out-of-the-box.
 
 ### Step 3.2: Install Dependencies
 
@@ -713,6 +736,7 @@ You've now built a complete streaming chatbot with:
 4. **✅ Browser UI** - React chat with streaming text
 5. **✅ Deployed** - All components on Databricks Apps
 6. **✅ Authenticated** - Service principal permissions configured
+7. **✅ UI Template** - Using [OpenResponses PR branch](https://github.com/databricks/app-templates/compare/main...smurching:app-templates:feature/openresponses-support) for streaming support
 
 **Architecture Flow:**
 ```
