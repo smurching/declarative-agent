@@ -15,10 +15,14 @@ import sys
 import logging
 import json
 
-# Add parent directory to path for SDK imports
-sys.path.insert(0, str(Path(__file__).parent.parent))
-
-from sdk.declarative_agent import DeclarativeAgent, AgentRunner
+# Import from installed package
+try:
+    # When installed as package
+    from declarative_agent import DeclarativeAgent, AgentRunner
+except ImportError:
+    # When running from source
+    sys.path.insert(0, str(Path(__file__).parent.parent))
+    from sdk.declarative_agent import DeclarativeAgent, AgentRunner
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)

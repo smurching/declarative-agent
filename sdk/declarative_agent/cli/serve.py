@@ -138,10 +138,7 @@ def serve_command(
         env['AGENT_YAML_PATH'] = str(agent_path)
         env['BACKEND_APP_URL'] = backend_url
 
-        # Find project root
-        project_root = Path(__file__).parent.parent.parent.parent
-
-        # Step 4: Start agent app
+        # Step 4: Start agent app using installed package
         cmd = [
             sys.executable, "-m", "uvicorn",
             "agent_app.main:app",
@@ -159,8 +156,7 @@ def serve_command(
         # Run agent app (blocking)
         agent_process = subprocess.Popen(
             cmd,
-            env=env,
-            cwd=project_root
+            env=env
         )
 
         # Wait for agent process

@@ -1,4 +1,4 @@
 # Install declarative-agent CLI from GitHub
 # This provides the 'declarative-agent' command with all dependencies
-# Updated: 2026-02-19 20:32 - v0.1.1 with health check skip
-git+https://github.com/smurching/declarative-agent.git@9141fe7
+# Updated: 2026-02-19 20:33 - v0.1.2 with syntax fix
+git+https://github.com/smurching/declarative-agent.git@6a1dbf0
