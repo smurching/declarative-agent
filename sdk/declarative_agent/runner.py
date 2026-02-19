@@ -189,18 +189,54 @@ class AgentRunner:
         # Make streaming HTTP request to backend
         url = f"{self.agent.backend_url}/v1/responses"
 
-        # Get authentication headers if using WorkspaceClient (Databricks Apps)
+        # Get authentication headers if in Databricks Apps environment
         headers = {}
-        if self.workspace_client:
+        if self.workspace_client or (os.getenv("DATABRICKS_HOST") and os.getenv("DATABRICKS_CLIENT_ID")):
             try:
-                # Use WorkspaceClient to get properly scoped token for app-to-app auth
-                logger.info("Attempting to get token from WorkspaceClient...")
-                token = self.workspace_client.config.oauth_token().access_token
-                logger.info(f"Successfully got token from WorkspaceClient (length: {len(token)})")
-                headers["Authorization"] = f"Bearer {token}"
-                logger.info("Added Authorization header for backend request")
+                # Use manual OAuth2 client credentials flow (same as chatbot)
+                # This gets a properly scoped token for app-to-app authentication
+                import httpx as auth_httpx
+                import base64
+
+                host = os.getenv("DATABRICKS_HOST", "")
+                client_id = os.getenv("DATABRICKS_CLIENT_ID", "")
+                client_secret = os.getenv("DATABRICKS_CLIENT_SECRET", "")
+
+                if not host or not client_id or not client_secret:
+                    logger.error("Missing required environment variables for OAuth authentication")
+                else:
+                    # Add https:// if not present
+                    if not host.startswith(('http://', 'https://')):
+                        host = f"https://{host}"
+
+                    token_url = f"{host.rstrip('/')}/oidc/v1/token"
+
+                    # Use Basic auth with form-encoded body (same as chatbot)
+                    logger.info(f"Requesting OAuth token from {token_url}...")
+                    auth_header = base64.b64encode(f"{client_id}:{client_secret}".encode()).decode()
+
+                    token_response = auth_httpx.post(
+                        token_url,
+                        headers={
+                            "Authorization": f"Basic {auth_header}",
+                            "Content-Type": "application/x-www-form-urlencoded",
+                        },
+                        data="grant_type=client_credentials&scope=all-apis",
+                        timeout=10.0
+                    )
+
+                    if token_response.status_code == 200:
+                        token_data = token_response.json()
+                        token = token_data.get("access_token")
+                        if token:
+                            headers["Authorization"] = f"Bearer {token}"
+                            logger.info(f"Successfully got OAuth token (length: {len(token)})")
+                        else:
+                            logger.error("No access_token in OAuth response")
+                    else:
+                        logger.error(f"OAuth token request failed: {token_response.status_code} - {token_response.text}")
             except Exception as e:
-                logger.error(f"Failed to get Databricks token from WorkspaceClient: {e}", exc_info=True)
+                logger.error(f"Failed to get OAuth token: {e}", exc_info=True)
 
         async with httpx.AsyncClient(timeout=300.0) as client:
             try:
