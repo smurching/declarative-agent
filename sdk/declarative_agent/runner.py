@@ -35,6 +35,7 @@ class AgentRunner:
 
         # Check if this is a Databricks Apps URL (requires special auth)
         is_databricks_app = "databricksapps.com" in agent.backend_url.lower()
+        self.workspace_client = None  # Store for token retrieval
 
         if is_databricks_app:
             # Use DatabricksOpenAI for Databricks Apps authentication
@@ -43,6 +44,7 @@ class AgentRunner:
                 from databricks.sdk import WorkspaceClient
 
                 w = WorkspaceClient(profile=workspace_profile) if workspace_profile else WorkspaceClient()
+                self.workspace_client = w  # Store for later token retrieval
                 self.client = AsyncDatabricksOpenAI(
                     base_url=agent.backend_url,
                     workspace_client=w
@@ -185,47 +187,16 @@ class AgentRunner:
         # Make streaming HTTP request to backend
         url = f"{self.agent.backend_url}/v1/responses"
 
-        # Get authentication headers if in Databricks Apps context
+        # Get authentication headers if using WorkspaceClient (Databricks Apps)
         headers = {}
-        if os.getenv("DATABRICKS_HOST") and os.getenv("DATABRICKS_CLIENT_ID"):
+        if self.workspace_client:
             try:
-                # Use OAuth2 client credentials flow for service principals
-                import httpx as auth_httpx
-
-                host = os.getenv("DATABRICKS_HOST")
-                client_id = os.getenv("DATABRICKS_CLIENT_ID")
-                client_secret = os.getenv("DATABRICKS_CLIENT_SECRET")
-
-                # Add https:// if not present
-                if not host.startswith(('http://', 'https://')):
-                    host = f"https://{host}"
-
-                token_url = f"{host}/oidc/v1/token"
-
-                # Extract backend app client ID from URL if possible
-                # Format: https://<app-name>-<workspace-id>.aws.databricksapps.com
-                backend_host = self.agent.backend_url.split('/')[2]  # Get hostname
-                # Request token with sql scope for Databricks API access
-                token_response = auth_httpx.post(
-                    token_url,
-                    data={
-                        "grant_type": "client_credentials",
-                        "scope": "all-apis sql"
-                    },
-                    auth=(client_id, client_secret),
-                    timeout=10.0
-                )
-
-                if token_response.status_code == 200:
-                    token_data = token_response.json()
-                    token = token_data.get("access_token")
-                    if token:
-                        headers["Authorization"] = f"Bearer {token}"
-                        logger.debug("Added Databricks OAuth token for backend request")
-                else:
-                    logger.warning(f"OAuth token request failed: {token_response.status_code}")
+                # Use WorkspaceClient to get properly scoped token for app-to-app auth
+                token = self.workspace_client.config.oauth_token().access_token
+                headers["Authorization"] = f"Bearer {token}"
+                logger.debug("Added Databricks token from WorkspaceClient for backend request")
             except Exception as e:
-                logger.warning(f"Could not get Databricks OAuth token: {e}")
+                logger.warning(f"Could not get Databricks token from WorkspaceClient: {e}")
 
         async with httpx.AsyncClient(timeout=300.0) as client:
             try:
