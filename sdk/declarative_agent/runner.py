@@ -187,20 +187,36 @@ class AgentRunner:
 
         # Get authentication headers if in Databricks Apps context
         headers = {}
-        if os.getenv("DATABRICKS_HOST"):
+        if os.getenv("DATABRICKS_HOST") and os.getenv("DATABRICKS_CLIENT_ID"):
             try:
-                from databricks.sdk import WorkspaceClient
-                w = WorkspaceClient()
-                # Trigger auth and get token from credentials provider
-                credentials = w.config.authenticate()
-                if credentials and hasattr(credentials, 'token'):
-                    token = credentials.token()
-                    headers["Authorization"] = f"Bearer {token}"
-                    logger.debug("Added Databricks auth header for backend request")
+                # Use OAuth2 client credentials flow for service principals
+                import httpx as auth_httpx
+
+                host = os.getenv("DATABRICKS_HOST")
+                client_id = os.getenv("DATABRICKS_CLIENT_ID")
+                client_secret = os.getenv("DATABRICKS_CLIENT_SECRET")
+
+                token_url = f"{host}/oidc/v1/token"
+                token_response = auth_httpx.post(
+                    token_url,
+                    data={
+                        "grant_type": "client_credentials",
+                        "scope": "all-apis"
+                    },
+                    auth=(client_id, client_secret),
+                    timeout=10.0
+                )
+
+                if token_response.status_code == 200:
+                    token_data = token_response.json()
+                    token = token_data.get("access_token")
+                    if token:
+                        headers["Authorization"] = f"Bearer {token}"
+                        logger.debug("Added Databricks OAuth token for backend request")
                 else:
-                    logger.warning("Could not extract token from credentials")
+                    logger.warning(f"OAuth token request failed: {token_response.status_code}")
             except Exception as e:
-                logger.warning(f"Could not get Databricks auth token: {e}")
+                logger.warning(f"Could not get Databricks OAuth token: {e}")
 
         async with httpx.AsyncClient(timeout=300.0) as client:
             try:
