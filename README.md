@@ -1,5 +1,7 @@
 # Agent Backend with OpenResponses API
 
+CUJ writeup: https://docs.google.com/document/d/11kq1MtODOa2gv_OnkMkBQ9LhrknKNT-2Z8qvwOKK5VI/edit?tab=t.0
+
 A production-ready agent backend built on Databricks Apps + Lakebase, implementing an OpenResponses-compatible API for conversation management and LLM interaction. Supports both **SQLite** (local development) and **PostgreSQL/Lakebase** (production).
 
 ## 📚 Documentation
